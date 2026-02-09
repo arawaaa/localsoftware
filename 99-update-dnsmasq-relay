@@ -1,0 +1,39 @@
+#!/bin/bash
+
+INTERFACE=$1
+ACTION=$2
+
+# We only care about wlan0 getting an IP
+if [ "$INTERFACE" = "wlan0" ] && [[ "$ACTION" =~ ^(up|dhcp4-change)$ ]]; then
+    # Get current IP
+    IP_ADDR=$(ip -4 addr show wlan0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -n1)
+    # Get Gateway
+    GW_ADDR=$(ip route show default dev wlan0 | awk '{print $3}' | head -n1)
+
+    if [ -n "$IP_ADDR" ] && [ -n "$GW_ADDR" ]; then
+        # 1. Update DHCP Relay Config
+        CONFIG_DIR="/etc/NetworkManager/dnsmasq-shared.d"
+        CONFIG_FILE="$CONFIG_DIR/relay.conf"
+        NEW_LINE="dhcp-relay=$IP_ADDR,$GW_ADDR"
+        
+        mkdir -p "$CONFIG_DIR"
+        
+        if [ ! -f "$CONFIG_FILE" ] || [ "$(cat "$CONFIG_FILE")" != "$NEW_LINE" ]; then
+            echo "$NEW_LINE" > "$CONFIG_FILE"
+            if nmcli connection show --active | grep -q "RapiHotspot"; then
+                (sleep 2; nmcli connection up RapiHotspot) &
+            fi
+        fi
+
+        # 2. IP Mirroring for parprouted
+        # Ensure eth0 is up
+        ip link set eth0 up
+        # Remove old /32 addresses from eth0 to avoid duplicates
+        ip addr flush dev eth0 scope global
+        # Add the current wlan0 IP to eth0
+        ip addr add "$IP_ADDR/32" dev eth0
+        
+        # 3. Restart parprouted to ensure it uses the new IP
+        systemctl restart parprouted.service
+    fi
+fi
