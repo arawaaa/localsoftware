@@ -1,0 +1,14 @@
+[Unit]
+Description=WLAN Bandwidth Monitor and WebSocket Server
+After=network.target
+
+[Service]
+ExecStart=/home/rapi/wlan_monitor
+WorkingDirectory=/home/rapi
+Restart=always
+User=rapi
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
