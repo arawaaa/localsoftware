@@ -30,6 +30,7 @@ public:
 
         // Wrap the new client socket in a File object
         auto client_file = std::make_unique<File>(res);
+        std::cout << "[ACCEPT] New connection on FD " << res << std::endl;
 
         // Create and enqueue the ReadEvent for the new client, transferring ownership of the FD
         auto* read_ev = new BandwidthDataReadEvent(std::move(client_file), ring_);

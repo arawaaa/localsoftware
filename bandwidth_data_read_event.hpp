@@ -67,6 +67,7 @@ private:
     const std::string GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
     void handle_websocket_upgrade(const std::string& req) {
+        std::cout << "[WS] Upgrade requested on FD " << fd_ << std::endl;
         size_t key_pos = req.find("Sec-WebSocket-Key:");
         if (key_pos == std::string::npos) {
             key_pos = req.find("sec-websocket-key:");
@@ -110,6 +111,7 @@ private:
     }
 
     void handle_http_get() {
+        std::cout << "[HTTP] GET / from FD " << fd_ << std::endl;
         std::string header = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n";
         // Move ownership of the File object to the WriteEvent
         auto* write_ev = new BandwidthDataWriteEvent(std::move(file_), header, ring_, false);
