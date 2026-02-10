@@ -55,7 +55,7 @@ clang++ --target=arm-linux-gnueabihf --sysroot=./rpi-sysroot \
 ### Deployment
 1. Copy files to the Pi:
    ```bash
-   scp wlan_monitor_bin monitoringindex.html config/wlan_monitor.service config/99-update-dnsmasq-relay rapi@<IP>:~/
+   scp wlan_monitor_bin src/bandwidth_monitor/monitoringindex.html config/wlan_monitor.service config/99-update-dnsmasq-relay rapi@<IP>:~/
    ```
 2. Setup system locations:
    - Binary: `/usr/local/bin/wlan_monitor`
