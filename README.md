@@ -1,5 +1,7 @@
 # Raspberry Pi WLAN Monitor & Lennox S40 Integration
 
+An all in one C++ server to monitor bridge state, thermostat state. Very specific to my home automation setup. Also includes scripts and systemd service configurations to enable the 802.11<->802.3 bridge. Written by Arnav Rawat & Gemini 3. I (Arnav) designed the architecture for the io_uring server and the lennox data viewer, as well as helping debug the bridge configuration. Gemini wrote the majority of code here, but I took a driving role in specifying how the implementation should be done, essentially treating AI like an English language compiler.
+
 ## Compilation
 ```bash
 clang++ --target=arm-linux-gnueabihf --sysroot=./rpi-sysroot \
