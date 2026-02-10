@@ -1,4 +1,8 @@
 rpi-sysroot/
 wlan_monitor
+wlan_monitor_bin
+test_uring_bin
+test_ws.py
+monitoringindex.html
 wlan_usage.log
 *.log

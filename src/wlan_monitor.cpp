@@ -16,10 +16,11 @@
 #include <openssl/sha.h>
 #include <liburing.h>
 
-#include "io_event.hpp"
-#include "accept_event.hpp"
-#include "bandwidth_data_read_event.hpp"
-#include "bandwidth_data_write_event.hpp"
+#include "common/io_event.hpp"
+#include "bandwidth_monitor/accept_event.hpp"
+#include "bandwidth_monitor/bandwidth_data_read_event.hpp"
+#include "bandwidth_monitor/bandwidth_data_write_event.hpp"
+#include "lennox_server/simple_webserver.hpp"
 
 // Constants
 const std::string INTERFACE = "wlan0";
@@ -27,6 +28,7 @@ const std::string RX_FILE = "/sys/class/net/" + INTERFACE + "/statistics/rx_byte
 const std::string TX_FILE = "/sys/class/net/" + INTERFACE + "/statistics/tx_bytes";
 const std::string LOG_FILE = "/var/log/wlan_monitor/wlan_usage.log";
 constexpr int SERVER_PORT = 8888;
+constexpr int HTTP_PORT = 8080;
 
 // Global speed state
 double global_rx_speed = 0.0;
@@ -146,15 +148,25 @@ void server_func() {
     io_uring_queue_exit(&ring);
 }
 
+void http_server_func() {
+    SimpleWebserver server;
+    server.run(HTTP_PORT);
+}
+
 int main() {
     std::cout << "Starting bandwidth monitor for " << INTERFACE << "..." << std::endl;
     std::cout << "Logging hourly and daily totals to " << LOG_FILE << std::endl;
     
-    // Start server thread
+    // Start io_uring websocket server thread
     std::thread server_t(server_func);
     server_t.detach();
 
+    // Start serial HTTP server thread (Lennox integration)
+    std::thread http_t(http_server_func);
+    http_t.detach();
+
     unsigned long long rx_prev = read_bytes(RX_FILE);
+
     unsigned long long tx_prev = read_bytes(TX_FILE);
     
     time_t now = time(nullptr);

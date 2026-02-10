@@ -1,0 +1,165 @@
+#pragma once
+
+#include <string>
+#include <vector>
+#include <iostream>
+#include <thread>
+#include <chrono>
+#include <boost/beast/core.hpp>
+#include <boost/beast/http.hpp>
+#include <boost/beast/ssl.hpp>
+#include <boost/beast/version.hpp>
+#include <boost/asio/connect.hpp>
+#include <boost/asio/ip/tcp.hpp>
+#include <boost/asio/ssl/error.hpp>
+#include <boost/asio/ssl/stream.hpp>
+#include <boost/json.hpp>
+#include <openssl/ssl.h>
+
+namespace beast = boost::beast;
+namespace http = beast::http;
+namespace net = boost::asio;
+namespace ssl = net::ssl;
+namespace json = boost::json;
+using tcp = net::ip::tcp;
+
+class S40Client {
+public:
+    S40Client() : ctx_(ssl::context::tlsv12_client) {
+        ctx_.set_verify_mode(ssl::verify_none);
+    }
+
+    struct ZoneData {
+        double temperature = 0.0;
+        double humidity = 0.0;
+        bool valid = false;
+    };
+
+    ZoneData fetch_data() {
+        ZoneData result;
+        try {
+            net::io_context ioc;
+            tcp::resolver resolver(ioc);
+            beast::ssl_stream<beast::tcp_stream> stream(ioc, ctx_);
+
+            auto const results = resolver.resolve(host_, "443");
+            beast::get_lowest_layer(stream).connect(results);
+
+            if (!SSL_set_tlsext_host_name(stream.native_handle(), host_.c_str())) {
+                return result;
+            }
+            stream.handshake(ssl::stream_base::client);
+
+            // 1. Connect
+            {
+                http::request<http::string_body> req{http::verb::post, "/Endpoints/" + client_id_ + "/Connect", 11};
+                req.set(http::field::host, host_);
+                req.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
+                req.content_length(0);
+                http::write(stream, req);
+
+                http::response<http::string_body> res;
+                beast::flat_buffer buffer;
+                http::read(stream, buffer, res);
+                if (res.result() != http::status::ok && res.result() != http::status::no_content) {
+                    return result;
+                }
+            }
+
+            // 2. RequestData
+            {
+                json::object payload;
+                payload["MessageId"] = "1";
+                payload["MessageType"] = "RequestData";
+                payload["SenderId"] = client_id_;
+                payload["TargetId"] = "LCC";
+                json::object additional_params;
+                additional_params["JSONPath"] = "1;/zones";
+                payload["AdditionalParameters"] = additional_params;
+
+                http::request<http::string_body> req{http::verb::post, "/Messages/RequestData", 11};
+                req.set(http::field::host, host_);
+                req.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
+                req.set(http::field::content_type, "application/json");
+                req.body() = json::serialize(payload);
+                req.prepare_payload();
+                http::write(stream, req);
+
+                http::response<http::string_body> res;
+                beast::flat_buffer buffer;
+                http::read(stream, buffer, res);
+                if (res.result() != http::status::ok && res.result() != http::status::no_content) {
+                    return result;
+                }
+            }
+
+            // 3. Poll Retrieve
+            for (int i = 0; i < 60; ++i) { 
+                http::request<http::string_body> req{http::verb::get, "/Messages/" + client_id_ + "/Retrieve", 11};
+                req.set(http::field::host, host_);
+                req.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
+                http::write(stream, req);
+
+                http::response<http::string_body> res;
+                beast::flat_buffer buffer;
+                http::read(stream, buffer, res);
+
+                if (res.result() == http::status::ok) {
+                    try {
+                        json::value jv = json::parse(res.body());
+                        if (jv.is_object()) {
+                            auto const& obj = jv.as_object();
+                            if (obj.contains("messages") && obj.at("messages").is_array()) {
+                                for (auto const& msg : obj.at("messages").as_array()) {
+                                    if (msg.is_object()) {
+                                        auto const& msg_obj = msg.as_object();
+                                        if (msg_obj.contains("Data") && msg_obj.at("Data").is_object()) {
+                                            auto const& data_obj = msg_obj.at("Data").as_object();
+                                            if (data_obj.contains("zones") && data_obj.at("zones").is_array()) {
+                                                auto const& zones = data_obj.at("zones").as_array();
+                                                if (!zones.empty()) {
+                                                    auto const& z0 = zones[0].as_object();
+                                                    if (z0.contains("status") && z0.at("status").is_object()) {
+                                                        auto const& status = z0.at("status").as_object();
+                                                        if (status.contains("temperature")) {
+                                                            result.temperature = status.at("temperature").to_number<double>();
+                                                            if (status.contains("humidity")) {
+                                                                result.humidity = status.at("humidity").to_number<double>();
+                                                            }
+                                                            result.valid = true;
+                                                            goto finished;
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } catch (...) { }
+                }
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+            }
+
+        finished:
+            // 4. Disconnect
+            {
+                http::request<http::string_body> req{http::verb::post, "/Endpoints/" + client_id_ + "/Disconnect", 11};
+                req.set(http::field::host, host_);
+                req.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
+                req.content_length(0);
+                http::write(stream, req);
+            }
+            beast::error_code ec;
+            stream.shutdown(ec);
+        } catch (...) { }
+
+        return result;
+    }
+
+private:
+    std::string host_ = "192.168.12.10";
+    std::string client_id_ = "simple_zone_requester_cpp";
+    ssl::context ctx_;
+};
