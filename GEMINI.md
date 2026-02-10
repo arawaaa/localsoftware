@@ -1,58 +1,60 @@
-# Raspberry Pi WLAN Traffic Monitor
+# Raspberry Pi WLAN Traffic Monitor & Lennox S40 Exploration
 
-A real-time bandwidth monitoring system for Raspberry Pi, featuring persistent logging, a WebSocket-based binary streaming server, and a single-file web visualization frontend.
+A real-time bandwidth monitoring system for Raspberry Pi and investigation tools for local Lennox S40 thermostat integration.
 
 ## Project Overview
 
-- **Purpose:** Monitor WLAN bandwidth usage in real-time and provide historical logging.
+### WLAN Monitor
+- **Backend (`wlan_monitor.cpp`):** An asynchronous C++17 application utilizing `io_uring` for high-performance, multi-user handling. It polls `/sys/class/net/wlan0/statistics`, logs usage to `/var/log/wlan_monitor/`, and streams data over WebSockets (Port 8888).
 - **Architecture:** 
-    - **Backend (`wlan_monitor.c`):** A multithreaded C application that polls `/sys/class/net/wlan0/statistics`, logs hourly/daily usage, and streams live speed data over WebSockets (Port 8888).
-    - **Frontend (`index.html`):** A self-hosted Chart.js application that visualizes live traffic and displays historical usage tables.
-    - **Network Integration:** Implements a Layer 3 bridge using `parprouted` and custom NetworkManager dispatcher scripts for dynamic IP mirroring and DHCP relaying.
-- **mDNS:** The system is configured to respond to `rapi.local` via `avahi-daemon`.
+    - Event-driven via `IoEvent` wrapper classes (`Accept`, `Read`, `Write`).
+    - Robust handling of partial TCP reads/writes through event chaining and kernel-level linking (`IOSQE_IO_LINK`).
+- **Frontend (`monitoringindex.html`):** A self-hosted Chart.js application served from `/srv/` that visualizes live traffic and historical logs.
+
+### Lennox S40 Integration
+- **Discovery:** Thermostat identified via mDNS at `rapi.local` / `192.168.12.10`.
+- **Interface:** Local HTTPS REST API (`/zones`, `/equipments`).
+- **Tools:** Python verification scripts (`verify_api.py`, `get_zones_simple.py`) for data extraction.
 
 ## Building and Running
 
 ### Cross-Compilation
-The project is designed to be cross-compiled for ARM architectures (Raspberry Pi).
+The project is cross-compiled for 32-bit ARM using `clang++` and the `lld` linker with a local sysroot.
 
 ```bash
-arm-linux-gnu-gcc --sysroot=./rpi-sysroot \
-    -B./rpi-sysroot/usr/lib/arm-linux-gnueabihf/ \
-    -I./rpi-sysroot/usr/include/arm-linux-gnueabihf \
+clang++ --target=arm-linux-gnueabihf --sysroot=./rpi-sysroot \
+    -fuse-ld=lld \
+    -I./rpi-sysroot/usr/include \
     -L./rpi-sysroot/usr/lib/arm-linux-gnueabihf \
     -L./rpi-sysroot/lib/arm-linux-gnueabihf \
-    -lpthread -lssl -lcrypto -lz -lzstd -latomic \
-    wlan_monitor.c -o wlan_monitor
+    -luring -lssl -lcrypto -lpthread -latomic \
+    wlan_monitor.cpp -o wlan_monitor_bin
 ```
 
 ### Deployment
-1. Copy the binary and `index.html` to the Raspberry Pi home directory.
-2. Install the systemd service:
+1. Copy files to the Pi (IP: `192.168.12.223`):
    ```bash
-   sudo cp wlan_monitor.service /etc/systemd/system/
-   sudo systemctl daemon-reload
-   sudo systemctl enable --now wlan_monitor.service
+   scp wlan_monitor_bin monitoringindex.html wlan_monitor.service rapi@192.168.12.223:~/
    ```
-
-### Runtime Configuration
-- **Server Port:** 8888 (Handles both HTTP GET for `index.html` and WebSocket upgrades).
-- **Log File:** `wlan_usage.log` (Format: `[UNIX_TIMESTAMP] D/M/Y HOUR TX RX`).
-- **WiFi Hardware:** Optimized for Realtek RTL8822BU using the `88x2bu` community driver in Concurrent Mode (AP+STA).
-
-## Development Conventions
-
-- **Binary Protocol:** WebSocket communication uses a custom binary protocol:
-    - **History:** 28-byte `LogRecord` structs.
-    - **Transition:** 24-byte marker (3x `0xFFFFFFFFFFFFFFFF`).
-    - **Live:** Continuous 16-byte frames (2x `double` for RX/TX speeds).
-- **Self-Hosting:** the C server serves `index.html` on standard HTTP GET requests to `/` to simplify deployment.
-- **Dynamic Networking:** Network configuration (IP mirroring to `eth0`, DHCP relaying) is handled by `/etc/NetworkManager/dispatcher.d/99-update-dnsmasq-relay`.
+2. Move to system locations:
+   - Binary: `/usr/local/bin/wlan_monitor`
+   - Frontend: `/srv/monitoringindex.html`
+   - Service: `/etc/systemd/system/wlan_monitor.service`
+3. Initialize Logging:
+   ```bash
+   sudo mkdir -p /var/log/wlan_monitor && sudo chown rapi:rapi /var/log/wlan_monitor
+   ```
+4. Restart Service:
+   ```bash
+   sudo systemctl daemon-reload && sudo systemctl restart wlan_monitor.service
+   ```
 
 ## Key Files
 
-- `wlan_monitor.c`: Main application source code.
-- `index.html`: Web dashboard source code.
-- `wlan_monitor.service`: Systemd unit file for the monitoring service.
-- `test_ws.py`: Diagnostic script for testing WebSocket handshakes.
-- `rpi-sysroot/`: Local sysroot containing ARM headers and libraries for cross-compilation.
+- `wlan_monitor.cpp`: Main application entry point and event loop.
+- `io_event.hpp`: Abstract base class for `io_uring` async events.
+- `accept_event.hpp`: Handles new client connections.
+- `bandwidth_data_read_event.hpp`: Handles HTTP/WebSocket handshakes and log retrieval.
+- `bandwidth_data_write_event.hpp`: Handles asynchronous data transmission with partial-write support.
+- `get_zones_simple.py`: Robust script for retrieving expanded Lennox S40 zone JSON.
+- `rpi-sysroot/`: Local sysroot containing ARM headers (Boost 1.83, liburing, OpenSSL).

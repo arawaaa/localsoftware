@@ -169,23 +169,25 @@
                             }
                         }
                         
-                        // History Record: TS(8), TX(8), RX(8), HOUR(4) = 28 bytes
+                        // History Records: Multiple of 28 bytes (TS:8, TX:8, RX:8, HOUR:4)
+                        if (view.byteLength % 28 === 0) {
+                            for (let offset = 0; offset < view.byteLength; offset += 28) {
+                                const ts = Number(view.getBigUint64(offset, true)) * 1000;
+                                const tx = Number(view.getBigUint64(offset + 8, true));
+                                const rx = Number(view.getBigUint64(offset + 16, true));
+                                const hour = view.getUint32(offset + 24, true);
+                                addHistoryRow(ts, tx, rx, hour);
+                            }
+                        }
+                    } else {
+                        // Live Update: LogRecord format (28 bytes)
                         if (view.byteLength === 28) {
                             const ts = Number(view.getBigUint64(0, true)) * 1000;
                             const tx = Number(view.getBigUint64(8, true));
                             const rx = Number(view.getBigUint64(16, true));
-                            const hour = view.getUint32(24, true);
-                            addHistoryRow(ts, tx, rx, hour);
-                        }
-                    } else {
-                        // Live Update: RX_SPEED(8), TX_SPEED(8) as doubles
-                        if (view.byteLength === 16) {
-                            const rxSpeed = view.getFloat64(0, true);
-                            const txSpeed = view.getFloat64(8, true);
-                            const ts = Date.now();
                             
-                            chart.data.datasets[1].data.push({x: ts, y: rxSpeed});
-                            chart.data.datasets[0].data.push({x: ts, y: txSpeed});
+                            chart.data.datasets[1].data.push({x: ts, y: rx});
+                            chart.data.datasets[0].data.push({x: ts, y: tx});
                             
                             const cutoff = ts - 60000;
                             while (chart.data.datasets[0].data.length > 0 && chart.data.datasets[0].data[0].x < cutoff) {

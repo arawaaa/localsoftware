@@ -11,28 +11,64 @@ if [ "$INTERFACE" = "wlan0" ] && [[ "$ACTION" =~ ^(up|dhcp4-change)$ ]]; then
     GW_ADDR=$(ip route show default dev wlan0 | awk '{print $3}' | head -n1)
 
     if [ -n "$IP_ADDR" ] && [ -n "$GW_ADDR" ]; then
-        # 1. Update DHCP Relay Config
+        # Find a unique IP for eth0 to avoid dnsmasq relay confusion and network conflicts
+        BASE_IP=$(echo "$IP_ADDR" | cut -d. -f1-3)
+        ETH_IP=""
+        
+        # Start checking from .222 downwards, avoid current wlan0 IP
+        for i in {222..218}; do
+            TEST_IP="$BASE_IP.$i"
+            
+            # Skip if it matches our own wlan0 IP
+            if [ "$TEST_IP" = "$IP_ADDR" ]; then
+                continue
+            fi
+            
+            # Check if IP is in use on the network
+            if ! arping -c 1 -w 1 -I wlan0 "$TEST_IP" > /dev/null 2>&1; then
+                ETH_IP="$TEST_IP"
+                break
+            fi
+        done
+        
+        # Fallback if all checks fail (unlikely)
+        if [ -z "$ETH_IP" ]; then
+             ETH_IP="$BASE_IP.222"
+             if [ "$IP_ADDR" = "$ETH_IP" ]; then
+                ETH_IP="$BASE_IP.221"
+             fi
+        fi
+
+        # 1. Ensure eth0 is up and has its unique IP before starting services
+        ip link set eth0 up
+        ip addr flush dev eth0 scope global
+        ip addr add "$ETH_IP/32" dev eth0
+        
+        # Small delay to ensure the kernel registers the interface before dnsmasq tries to bind
+        sleep 2
+
+        # 2. Update DHCP Relay Config
         CONFIG_DIR="/etc/NetworkManager/dnsmasq-shared.d"
-        CONFIG_FILE="$CONFIG_DIR/relay.conf"
-        NEW_LINE="dhcp-relay=$IP_ADDR,$GW_ADDR"
-        
         mkdir -p "$CONFIG_DIR"
+
+        # Force dnsmasq to recognize eth0 despite NM's --bind-interfaces
+        echo "interface=eth0" > "$CONFIG_DIR/eth0.conf"
         
-        if [ ! -f "$CONFIG_FILE" ] || [ "$(cat "$CONFIG_FILE")" != "$NEW_LINE" ]; then
-            echo "$NEW_LINE" > "$CONFIG_FILE"
-            if nmcli connection show --active | grep -q "RapiHotspot"; then
-                (sleep 2; nmcli connection up RapiHotspot) &
+        # Configure relay without the arrival interface name.
+        RELAY_FILE="$CONFIG_DIR/relay.conf"
+        NEW_LINE="dhcp-relay=$ETH_IP,$GW_ADDR"
+        
+        if [ ! -f "$RELAY_FILE" ] || [ "$(cat "$RELAY_FILE")" != "$NEW_LINE" ]; then
+            echo "$NEW_LINE" > "$RELAY_FILE"
+            # Always ensure the hotspot is up with the new config
+            nmcli connection up RapiHotspot || true
+        else
+            # Even if config is same, if dnsmasq isn't running, bring it up
+            if ! pgrep -x dnsmasq > /dev/null; then
+                nmcli connection up RapiHotspot || true
             fi
         fi
 
-        # 2. IP Mirroring for parprouted
-        # Ensure eth0 is up
-        ip link set eth0 up
-        # Remove old /32 addresses from eth0 to avoid duplicates
-        ip addr flush dev eth0 scope global
-        # Add the current wlan0 IP to eth0
-        ip addr add "$IP_ADDR/32" dev eth0
-        
         # 3. Restart parprouted to ensure it uses the new IP
         systemctl restart parprouted.service
     fi

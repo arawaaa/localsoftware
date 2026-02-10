@@ -3,8 +3,8 @@ Description=WLAN Bandwidth Monitor and WebSocket Server
 After=network.target
 
 [Service]
-ExecStart=/home/rapi/wlan_monitor
-WorkingDirectory=/home/rapi
+ExecStart=/usr/local/bin/wlan_monitor
+WorkingDirectory=/srv
 Restart=always
 User=rapi
 StandardOutput=journal
