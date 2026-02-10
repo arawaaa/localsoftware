@@ -66,8 +66,8 @@ public:
                         res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
                         res.set(http::field::content_type, "text/html");
                         
-                        // Read monitoringindex.html
-                        std::ifstream f("/srv/monitoringindex.html");
+                        // Read dashboard.html
+                        std::ifstream f("/srv/dashboard.html");
                         if (f) {
                             std::stringstream ss;
                             ss << f.rdbuf();

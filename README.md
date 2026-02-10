@@ -16,11 +16,12 @@ clang++ --target=arm-linux-gnueabihf --sysroot=./rpi-sysroot \
 ## Deployment
 ```bash
 # 1. Copy to Pi
-scp wlan_monitor_bin src/bandwidth_monitor/monitoringindex.html config/wlan_monitor.service config/99-update-dnsmasq-relay rapi@<IP>:~/
+scp wlan_monitor_bin src/bandwidth_monitor/monitoringindex.html src/lennox_server/dashboard.html config/wlan_monitor.service config/99-update-dnsmasq-relay rapi@<IP>:~/
 
 # 2. Install on Pi
 sudo mv wlan_monitor_bin /usr/local/bin/wlan_monitor
 sudo mv monitoringindex.html /srv/monitoringindex.html
+sudo mv dashboard.html /srv/dashboard.html
 sudo mv wlan_monitor.service /etc/systemd/system/
 sudo mv 99-update-dnsmasq-relay /etc/NetworkManager/dispatcher.d/
 ```
