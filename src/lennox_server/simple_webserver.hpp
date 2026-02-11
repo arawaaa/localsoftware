@@ -26,13 +26,14 @@ bool g_data_valid = false;
 class SimpleWebserver {
 public:
     void run(unsigned short port) {
+        // Start S40 background update thread
+        std::thread(s40_loop).detach();
+
         try {
             net::io_context ioc{1};
             tcp::acceptor acceptor{ioc, {tcp::v4(), port}};
             
             std::cout << "[HTTP] Serial webserver listening on port " << port << std::endl;
-
-            S40Client s40;
 
             for (;;) {
                 // 1. Accept Connection (Blocking)
@@ -101,25 +102,31 @@ public:
                 http::write(socket, res, ec);
                 socket.shutdown(tcp::socket::shutdown_send, ec);
                 socket.close(); // Close immediately
-
-                // 5. Post-Processing: Update S40 Data
-                // The user requested: "After each request is served, I want you to query the zones endpoint"
-                // This blocks the server from accepting new connections until complete (Serial-only).
-                std::cout << "[HTTP] Request served. Updating S40 data..." << std::endl;
-                S40Client::ZoneData data = s40.fetch_data();
-                
-                if (data.valid) {
-                    std::lock_guard<std::mutex> lock(g_zone_mutex);
-                    g_temperature = data.temperature;
-                    g_humidity = data.humidity;
-                    g_data_valid = true;
-                    std::cout << "[S40] Updated: Temp=" << g_temperature << ", Hum=" << g_humidity << std::endl;
-                } else {
-                    std::cerr << "[S40] Failed to update data." << std::endl;
-                }
             }
         } catch (const std::exception& e) {
             std::cerr << "[HTTP] Fatal error: " << e.what() << std::endl;
+        }
+    }
+
+private:
+    static void s40_loop() {
+        S40Client s40;
+        while (true) {
+            std::cout << "[S40] Starting update cycle..." << std::endl;
+            S40Client::ZoneData data = s40.fetch_data();
+            
+            if (data.valid) {
+                std::lock_guard<std::mutex> lock(g_zone_mutex);
+                g_temperature = data.temperature;
+                g_humidity = data.humidity;
+                g_data_valid = true;
+                std::cout << "[S40] Updated: Temp=" << g_temperature << ", Hum=" << g_humidity << std::endl;
+            } else {
+                std::cerr << "[S40] Failed to update data." << std::endl;
+            }
+            
+            // Refresh every 3 minutes
+            std::this_thread::sleep_for(std::chrono::minutes(3));
         }
     }
 };
