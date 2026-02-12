@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../common/io_event.hpp"
+#include "../common/io_uring_manager.hpp"
 #include <liburing.h>
 #include <iostream>
 
@@ -10,10 +11,10 @@ class BandwidthDataTimerEvent : public IoEvent {
 public:
     BandwidthDataTimerEvent(BandwidthDataWriteEvent* writer, struct io_uring* ring);
 
-    void run(struct io_uring_sqe* sqe) override {
+    void prepare_timer() {
         ts_.tv_sec = 1;
         ts_.tv_nsec = 0;
-        io_uring_prep_timeout(sqe, &ts_, 0, 0);
+        IoUringManager::getInstance().cache_call(this, io_uring_prep_timeout, &ts_, 0, 0);
     }
 
     void post(int res) override;

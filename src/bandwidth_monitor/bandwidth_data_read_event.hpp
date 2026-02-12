@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../common/io_event.hpp"
+#include "../common/io_uring_manager.hpp"
 #include "bandwidth_data_write_event.hpp"
 #include "websocket_consumer_event.hpp"
 #include <vector>
@@ -21,8 +22,8 @@ public:
         buffer_.resize(2048);
     }
 
-    void run(struct io_uring_sqe* sqe) override {
-        io_uring_prep_recv(sqe, fd_, buffer_.data(), buffer_.size(), 0);
+    void prepare_read() {
+        IoUringManager::getInstance().cache_call(this, io_uring_prep_recv, fd_, buffer_.data(), buffer_.size(), 0);
     }
 
     void post(int res) override {
@@ -38,7 +39,7 @@ public:
                 delete this;
                 return;
             }
-            this->on(ring_);
+            prepare_read();
             return;
         }
 
@@ -103,11 +104,11 @@ private:
 
         // Move ownership of the File object to the WriteEvent
         auto* write_ev = new BandwidthDataWriteEvent(std::move(file_), oss.str(), ring_, true);
-        write_ev->on(ring_);
+        write_ev->prepare_write();
 
         // Start the non-owning consumer to handle Pings/Close from client
         auto* consumer = new WebSocketConsumerEvent(raw_fd, ring_);
-        consumer->on(ring_);
+        consumer->prepare_consumer();
     }
 
     void handle_http_get() {
@@ -115,6 +116,6 @@ private:
         std::string header = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n";
         // Move ownership of the File object to the WriteEvent
         auto* write_ev = new BandwidthDataWriteEvent(std::move(file_), header, ring_, false);
-        write_ev->on(ring_);
+        write_ev->prepare_write();
     }
 };

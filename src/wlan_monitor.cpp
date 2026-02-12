@@ -17,6 +17,7 @@
 #include <liburing.h>
 
 #include "common/io_event.hpp"
+#include "common/io_uring_manager.hpp"
 #include "bandwidth_monitor/accept_event.hpp"
 #include "bandwidth_monitor/bandwidth_data_read_event.hpp"
 #include "bandwidth_monitor/bandwidth_data_write_event.hpp"
@@ -28,7 +29,7 @@ const std::string RX_FILE = "/sys/class/net/" + INTERFACE + "/statistics/rx_byte
 const std::string TX_FILE = "/sys/class/net/" + INTERFACE + "/statistics/tx_bytes";
 const std::string LOG_FILE = "/var/log/wlan_monitor/wlan_usage.log";
 constexpr int SERVER_PORT = 8888;
-constexpr int HTTP_PORT = 8080;
+constexpr int HTTP_PORT = 80;
 
 // Global speed state
 double global_rx_speed = 0.0;
@@ -122,7 +123,8 @@ void server_func() {
     // Wrap the server socket in a File object and transfer ownership to the AcceptEvent
     auto server_file = std::make_unique<File>(server_fd);
     auto* accept_ev = new BandwidthMonitorAcceptEvent(std::move(server_file), &ring);
-    accept_ev->on(&ring);
+    accept_ev->prepare_accept();
+    IoUringManager::getInstance().submit_events(&ring);
     io_uring_submit(&ring);
 
     while (true) {
@@ -135,13 +137,17 @@ void server_func() {
 
         IoEvent* ev = reinterpret_cast<IoEvent*>(io_uring_cqe_get_data(cqe));
         if (ev) {
-            ev->post(cqe->res);
+            auto [success, result_code] = ev->abstract_event_success(cqe->res);
+            if (success) {
+                ev->post(result_code);
+            }
         }
 
         io_uring_cqe_seen(&ring, cqe);
         
         // Ensure pending submissions (like from post()) are sent
         // Note: In high load, you might want to batch this or use SQPOLL
+        IoUringManager::getInstance().submit_events(&ring);
         io_uring_submit(&ring); 
     }
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../common/io_event.hpp"
+#include "../common/io_uring_manager.hpp"
 #include "bandwidth_data_read_event.hpp"
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -15,16 +16,16 @@ public:
         client_addr_len_ = sizeof(client_addr_);
     }
 
-    void run(struct io_uring_sqe* sqe) override {
-        io_uring_prep_accept(sqe, fd_, 
-                             reinterpret_cast<struct sockaddr*>(&client_addr_), 
-                             &client_addr_len_, 0);
+    void prepare_accept() {
+        IoUringManager::getInstance().cache_call(this, io_uring_prep_accept, fd_, 
+                         reinterpret_cast<struct sockaddr*>(&client_addr_), 
+                         &client_addr_len_, 0);
     }
 
     void post(int res) override {
         if (res < 0) {
             // Re-arm to keep accepting even on failure
-            this->on(ring_);
+            prepare_accept();
             return;
         }
 
@@ -34,10 +35,10 @@ public:
 
         // Create and enqueue the ReadEvent for the new client, transferring ownership of the FD
         auto* read_ev = new BandwidthDataReadEvent(std::move(client_file), ring_);
-        read_ev->on(ring_);
+        read_ev->prepare_read();
 
         // Re-arm the accept event to listen for the next connection
-        this->on(ring_);
+        prepare_accept();
     }
 
     std::string get_info() const override {

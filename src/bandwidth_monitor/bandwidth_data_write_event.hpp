@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../common/io_event.hpp"
+#include "../common/io_uring_manager.hpp"
 #include "bandwidth_data_timer_event.hpp"
 #include <string>
 #include <cstring>
@@ -50,10 +51,10 @@ public:
         if (file_stream_.is_open()) file_stream_.close();
     }
 
-    void run(struct io_uring_sqe* sqe) override {
+    void prepare_write() {
         const char* data_ptr = response_.c_str() + sent_bytes_;
         size_t remaining = response_.length() - sent_bytes_;
-        io_uring_prep_send(sqe, fd_, data_ptr, remaining, MSG_NOSIGNAL);
+        IoUringManager::getInstance().cache_call(this, io_uring_prep_send, fd_, data_ptr, remaining, MSG_NOSIGNAL);
     }
 
     void post(int res) override {
@@ -65,7 +66,7 @@ public:
         sent_bytes_ += res;
 
         if (sent_bytes_ < response_.length()) {
-            this->on(ring_);
+            prepare_write();
             return;
         }
 
@@ -116,7 +117,7 @@ public:
         if (state_ == STATE_WAITING_TIMER) {
             state_ = STATE_SENDING_LIVE;
             prepare_live_data();
-            this->on(ring_);
+            prepare_write();
         }
     }
 
@@ -135,7 +136,8 @@ private:
         if (!timer_event_) {
             timer_event_ = new BandwidthDataTimerEvent(this, ring_);
         }
-        timer_event_->on(ring_);
+        // Timer event handles its own prep
+        timer_event_->prepare_timer();
     }
 
     std::string wrap_ws(const void* data, size_t len) {
@@ -156,10 +158,10 @@ private:
         char chunk_buf[4096];
         if (file_stream_.is_open() && file_stream_.read(chunk_buf, sizeof(chunk_buf))) {
             response_.assign(chunk_buf, file_stream_.gcount());
-            this->on(ring_);
+            prepare_write();
         } else if (file_stream_.gcount() > 0) {
             response_.assign(chunk_buf, file_stream_.gcount());
-            this->on(ring_);
+            prepare_write();
         } else {
             state_ = STATE_DONE;
             // Finish HTTP request
@@ -172,7 +174,7 @@ private:
             state_ = STATE_SENDING_MARKER;
             uint64_t marker[3] = {0xFFFFFFFFFFFFFFFFULL, 0xFFFFFFFFFFFFFFFFULL, 0xFFFFFFFFFFFFFFFFULL};
             response_ = wrap_ws(marker, sizeof(marker));
-            this->on(ring_);
+            prepare_write();
             return;
         }
 
@@ -194,10 +196,10 @@ private:
             state_ = STATE_SENDING_MARKER;
             uint64_t marker[3] = {0xFFFFFFFFFFFFFFFFULL, 0xFFFFFFFFFFFFFFFFULL, 0xFFFFFFFFFFFFFFFFULL};
             response_ = wrap_ws(marker, sizeof(marker));
-            this->on(ring_);
+            prepare_write();
         } else {
             response_ = wrap_ws(chunk_data.data(), chunk_data.size());
-            this->on(ring_);
+            prepare_write();
         }
     }
 

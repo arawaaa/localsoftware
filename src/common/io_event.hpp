@@ -3,6 +3,7 @@
 #include <liburing.h>
 #include <string>
 #include <memory>
+#include <utility>
 #include "file.hpp"
 
 /**
@@ -20,37 +21,18 @@ public:
     virtual ~IoEvent() = default;
 
     /**
-     * @brief Prepare the submission queue entry (SQE).
-     */
-    virtual void run(struct io_uring_sqe* sqe) = 0;
-
-    /**
      * @brief Handle the completion queue entry (CQE) result.
      */
     virtual void post(int res) = 0;
 
     /**
-     * @brief Utility to place this event onto the ring.
+     * @brief Checks if the event was successful and returns a success flag along with a result code.
      */
-    void on(struct io_uring* ring) {
-        struct io_uring_sqe* sqe = io_uring_get_sqe(ring);
-        if (sqe) {
-            this->run(sqe);
-            io_uring_sqe_set_data(sqe, this);
-        }
-    }
-
-    /**
-     * @brief Link a subsequent event to this one using IOSQE_IO_LINK.
-     */
-    void link(IoEvent* next) {
-        linked_event_ = next;
-    }
+    virtual std::pair<bool, int> abstract_event_success(int res) { return {true, res}; }
 
     virtual std::string get_info() const = 0;
 
 protected:
     std::unique_ptr<File> file_;
     int fd_;
-    IoEvent* linked_event_ = nullptr;
 };

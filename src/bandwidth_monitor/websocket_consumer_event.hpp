@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../common/io_event.hpp"
+#include "../common/io_uring_manager.hpp"
 #include <vector>
 #include <string>
 
@@ -12,8 +13,8 @@ public:
         buffer_.resize(1024);
     }
 
-    void run(struct io_uring_sqe* sqe) override {
-        io_uring_prep_recv(sqe, fd_, buffer_.data(), buffer_.size(), 0);
+    void prepare_consumer() {
+        IoUringManager::getInstance().cache_call(this, io_uring_prep_recv, fd_, buffer_.data(), buffer_.size(), 0);
     }
 
     void post(int res) override {
@@ -22,7 +23,7 @@ public:
             return;
         }
         // Consume and discard client data (Pings, etc.)
-        this->on(ring_);
+        prepare_consumer();
     }
 
     std::string get_info() const override { return "WS Consumer FD " + std::to_string(fd_); }

@@ -7,8 +7,9 @@ A real-time bandwidth monitoring system for Raspberry Pi and investigation tools
 ### WLAN Monitor
 - **Backend (`wlan_monitor.cpp`):** An asynchronous C++17 application utilizing `io_uring` for high-performance, multi-user handling. It polls `/sys/class/net/wlan0/statistics`, logs usage to `/var/log/wlan_monitor/`, and streams data over WebSockets (Port 8888).
 - **Architecture:** 
-    - Event-driven via `IoEvent` wrapper classes (`Accept`, `Read`, `Write`).
-    - Robust handling of partial TCP reads/writes through event chaining and kernel-level linking (`IOSQE_IO_LINK`).
+    - **Centralized Management:** Managed by `IoUringManager` (Singleton), which handles `io_uring` SQE allocation and event dispatching.
+    - **Decoupled Events:** `IoEvent` subclasses register operations via `cache_call` without direct ring access.
+    - **Validation Logic:** `abstract_event_success` provides a unified way to validate CQE results and update event-specific state (e.g., bytes remaining) before `post-processing`.
 - **Frontend (`monitoringindex.html`):** A self-hosted Chart.js application served from `/srv/` that visualizes live traffic and historical logs.
 
 ### Lennox S40 Integration
@@ -25,10 +26,12 @@ The project is cross-compiled for 32-bit ARM using `clang++` and the `lld` linke
 clang++ --target=arm-linux-gnueabihf --sysroot=./rpi-sysroot \
     -fuse-ld=lld \
     -I./rpi-sysroot/usr/include \
+    -I./src \
     -L./rpi-sysroot/usr/lib/arm-linux-gnueabihf \
     -L./rpi-sysroot/lib/arm-linux-gnueabihf \
-    -luring -lssl -lcrypto -lpthread -latomic \
-    wlan_monitor.cpp -o wlan_monitor_bin
+    -luring -lssl -lcrypto -lpthread -latomic -lboost_json \
+    -std=c++20 \
+    src/wlan_monitor.cpp -o wlan_monitor_bin
 ```
 
 ### Deployment
@@ -52,7 +55,9 @@ clang++ --target=arm-linux-gnueabihf --sysroot=./rpi-sysroot \
 ## Key Files
 
 - `wlan_monitor.cpp`: Main application entry point and event loop.
-- `io_event.hpp`: Abstract base class for `io_uring` async events.
+- `io_uring_manager.hpp`: Singleton manager for `io_uring` submissions and event tracking.
+- `io_event.hpp`: Clean base class for all asynchronous events.
+- `inet_socket_read_write_event.hpp`: Intermediate class for tracking socket I/O progress and success.
 - `accept_event.hpp`: Handles new client connections.
 - `bandwidth_data_read_event.hpp`: Handles HTTP/WebSocket handshakes and log retrieval.
 - `bandwidth_data_write_event.hpp`: Handles asynchronous data transmission with partial-write support.
