@@ -1,0 +1,17 @@
+[
+  {
+    "directory": "/home/arawat/projects/localsoftware",
+    "command": "clang++ --target=arm-linux-gnueabihf --sysroot=./rpi-sysroot -fuse-ld=lld -I./rpi-sysroot/usr/include -I./src -L./rpi-sysroot/usr/lib/arm-linux-gnueabihf -L./rpi-sysroot/lib/arm-linux-gnueabihf -luring -lssl -lcrypto -lpthread -latomic -lboost_json -std=c++20 src/wlan_monitor.cpp -o wlan_monitor_bin",
+    "file": "src/wlan_monitor.cpp"
+  },
+  {
+    "directory": "/home/arawat/projects/localsoftware",
+    "command": "clang++ --target=arm-linux-gnueabihf --sysroot=./rpi-sysroot -fuse-ld=lld -I./rpi-sysroot/usr/include -I./src -L./rpi-sysroot/usr/lib/arm-linux-gnueabihf -L./rpi-sysroot/lib/arm-linux-gnueabihf -luring -lssl -lcrypto -lpthread -latomic -lboost_json -std=c++20 -xc++ -c src/common/inet_socket_read_write_event_bytes.hpp -o /dev/null",
+    "file": "src/common/inet_socket_read_write_event_bytes.hpp"
+  },
+  {
+    "directory": "/home/arawat/projects/localsoftware",
+    "command": "clang++ --target=arm-linux-gnueabihf --sysroot=./rpi-sysroot -fuse-ld=lld -I./rpi-sysroot/usr/include -I./src -L./rpi-sysroot/usr/lib/arm-linux-gnueabihf -L./rpi-sysroot/lib/arm-linux-gnueabihf -luring -lssl -lcrypto -lpthread -latomic -lboost_json -std=c++20 -xc++ -c src/common/inet_socket_read_write_event_http.hpp -o /dev/null",
+    "file": "src/common/inet_socket_read_write_event_http.hpp"
+  }
+]
