@@ -38,12 +38,15 @@ clang++ --target=arm-linux-gnueabihf --sysroot=./rpi-sysroot \
 ### Deployment
 1. Copy files to the Pi (IP: `192.168.12.223`):
    ```bash
-   scp wlan_monitor_bin src/bandwidth_monitor/monitoringindex.html src/aio_landing/dashboard.html config/wlan_monitor.service rapi@192.168.12.223:~/
+   scp wlan_monitor_bin src/bandwidth_monitor/monitoringindex.html \
+       src/aio_landing/dashboard.html src/aio_landing/landing.html \
+       config/wlan_monitor.service rapi@192.168.12.223:~/
    ```
 2. Move to system locations:
    - Binary: `/usr/local/bin/wlan_monitor`
    - Monitoring Frontend: `/srv/monitoringindex.html`
-   - Landing Dashboard: `/srv/dashboard.html`
+   - Landing Dashboard: `/srv/landing.html`
+   - Bandwidth Dashboard: `/srv/dashboard.html`
    - Service: `/etc/systemd/system/wlan_monitor.service`
 3. Initialize Logging:
    ```bash
@@ -62,6 +65,7 @@ clang++ --target=arm-linux-gnueabihf --sysroot=./rpi-sysroot \
 - `io_event.hpp`: Clean base class for all asynchronous events.
 - `inet_socket_read_write_event_http.hpp`: HTTP-aware socket reading/writing using Boost.Beast.
 - `aio_landing_server.hpp`: Implementation of the AIO landing page HTTP server.
+- `landing.html`: Personal landing page overview.
 - `accept_event.hpp`: Handles new client connections for the bandwidth monitor.
 - `bandwidth_data_read_event.hpp`: Handles WS handshakes and log retrieval.
 - `get_zones_simple.py`: Robust script for retrieving expanded Lennox S40 zone JSON.

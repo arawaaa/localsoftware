@@ -18,20 +18,34 @@ public:
 
         if (id == ID_READ) {
             auto req = parser_->get();
-            if (req.method() == http::verb::get && req.target() == "/") {
-                std::ifstream ifs("/srv/dashboard.html");
-                std::string content((std::istreambuf_iterator<char>(ifs)),
-                                    (std::istreambuf_iterator<char>()));
+            if (req.method() == http::verb::get) {
+                std::string path;
+                if (req.target() == "/") {
+                    path = "/srv/landing.html";
+                } else if (req.target() == "/bandwidth") {
+                    path = "/srv/dashboard.html";
+                }
+
+                if (!path.empty()) {
+                    std::ifstream ifs(path);
+                    if (ifs) {
+                        std::string content((std::istreambuf_iterator<char>(ifs)),
+                                            (std::istreambuf_iterator<char>()));
+                        
+                        http::response<http::string_body> resp{http::status::ok, req.version()};
+                        resp.set(http::field::content_type, "text/html");
+                        resp.set(http::field::connection, "close");
+                        resp.body() = std::move(content);
+                        resp.prepare_payload();
+                        
+                        write_http(std::move(resp));
+                        return;
+                    }
+                }
                 
-                http::response<http::string_body> resp{http::status::ok, req.version()};
-                resp.set(http::field::content_type, "text/html");
-                resp.set(http::field::connection, "close");
-                resp.body() = std::move(content);
-                resp.prepare_payload();
-                
-                write_http(std::move(resp));
+                // Not handled or not found
+                delete this;
             } else {
-                // Not handled or not found, just close for now
                 delete this;
             }
         } else if (id == ID_WRITE) {
