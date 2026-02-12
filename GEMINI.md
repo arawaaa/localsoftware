@@ -57,7 +57,7 @@ clang++ --target=arm-linux-gnueabihf --sysroot=./rpi-sysroot \
 - `wlan_monitor.cpp`: Main application entry point and event loop.
 - `io_uring_manager.hpp`: Singleton manager for `io_uring` submissions and event tracking.
 - `io_event.hpp`: Clean base class for all asynchronous events.
-- `inet_socket_read_write_event.hpp`: Intermediate class for tracking socket I/O progress and success.
+- `inet_socket_read_write_event_bytes.hpp`: Intermediate class for tracking socket I/O progress and success.
 - `accept_event.hpp`: Handles new client connections.
 - `bandwidth_data_read_event.hpp`: Handles HTTP/WebSocket handshakes and log retrieval.
 - `bandwidth_data_write_event.hpp`: Handles asynchronous data transmission with partial-write support.

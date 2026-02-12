@@ -5,16 +5,21 @@
 #include "defs.hpp"
 #include <utility>
 
-class InetSocketReadWriteEvent : public IoEvent {
+class InetSocketReadWriteEventBytes : public IoEvent {
 public:
-    InetSocketReadWriteEvent(std::unique_ptr<File> file, 
+    enum RequestID {
+        ID_READ = 1,
+        ID_WRITE = 2
+    };
+
+    InetSocketReadWriteEventBytes(std::unique_ptr<File> file, 
                              void* read_buf, size_t read_len,
                              void* write_buf, size_t write_len) 
         : IoEvent(std::move(file)), 
           read_buffer_(read_buf), read_bytes_left_(read_len), read_total_processed_(0),
           write_buffer_(write_buf), write_bytes_left_(write_len), write_total_processed_(0) {}
 
-    InetSocketReadWriteEvent(int fd, 
+    InetSocketReadWriteEventBytes(int fd, 
                              void* read_buf, size_t read_len,
                              void* write_buf, size_t write_len) 
         : IoEvent(fd), 
