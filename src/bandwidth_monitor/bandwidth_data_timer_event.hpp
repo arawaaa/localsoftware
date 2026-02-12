@@ -9,7 +9,7 @@ class BandwidthDataWriteEvent; // Forward declaration
 
 class BandwidthDataTimerEvent : public IoEvent {
 public:
-    BandwidthDataTimerEvent(BandwidthDataWriteEvent* writer, struct io_uring* ring);
+    BandwidthDataTimerEvent(BandwidthDataWriteEvent* writer);
 
     void prepare_timer() {
         ts_.tv_sec = 1;
@@ -23,6 +23,5 @@ public:
 
 private:
     BandwidthDataWriteEvent* writer_;
-    struct io_uring* ring_;
     struct __kernel_timespec ts_;
 };

@@ -17,8 +17,8 @@ extern std::string base64_encode(const unsigned char *data, size_t input_length)
 
 class BandwidthDataReadEvent : public IoEvent {
 public:
-    BandwidthDataReadEvent(std::unique_ptr<File> client_file, struct io_uring* ring) 
-        : IoEvent(std::move(client_file)), ring_(ring) {
+    BandwidthDataReadEvent(std::unique_ptr<File> client_file) 
+        : IoEvent(std::move(client_file)) {
         buffer_.resize(2048);
     }
 
@@ -62,7 +62,6 @@ public:
     std::string get_info() const override { return "BandwidthDataReadEvent on FD " + std::to_string(fd_); }
 
 private:
-    struct io_uring* ring_;
     std::vector<unsigned char> buffer_;
     std::string accumulated_;
     const std::string GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
@@ -103,11 +102,11 @@ private:
         int raw_fd = fd_;
 
         // Move ownership of the File object to the WriteEvent
-        auto* write_ev = new BandwidthDataWriteEvent(std::move(file_), oss.str(), ring_, true);
+        auto* write_ev = new BandwidthDataWriteEvent(std::move(file_), oss.str(), true);
         write_ev->prepare_write();
 
         // Start the non-owning consumer to handle Pings/Close from client
-        auto* consumer = new WebSocketConsumerEvent(raw_fd, ring_);
+        auto* consumer = new WebSocketConsumerEvent(raw_fd);
         consumer->prepare_consumer();
     }
 
@@ -115,7 +114,7 @@ private:
         std::cout << "[HTTP] GET / from FD " << fd_ << std::endl;
         std::string header = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n";
         // Move ownership of the File object to the WriteEvent
-        auto* write_ev = new BandwidthDataWriteEvent(std::move(file_), header, ring_, false);
+        auto* write_ev = new BandwidthDataWriteEvent(std::move(file_), header, false);
         write_ev->prepare_write();
     }
 };

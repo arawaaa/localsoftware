@@ -8,8 +8,8 @@
 class WebSocketConsumerEvent : public IoEvent {
 public:
     // Non-owning constructor: uses the FD without wrapping it in a File object
-    WebSocketConsumerEvent(int client_fd, struct io_uring* ring) 
-        : IoEvent(client_fd), ring_(ring) {
+    WebSocketConsumerEvent(int client_fd) 
+        : IoEvent(client_fd) {
         buffer_.resize(1024);
     }
 
@@ -29,6 +29,5 @@ public:
     std::string get_info() const override { return "WS Consumer FD " + std::to_string(fd_); }
 
 private:
-    struct io_uring* ring_;
     std::vector<unsigned char> buffer_;
 };

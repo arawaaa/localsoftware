@@ -36,10 +36,9 @@ public:
         STATE_DONE
     };
 
-    BandwidthDataWriteEvent(std::unique_ptr<File> client_file, std::string initial_response, struct io_uring* ring, bool is_websocket) 
+    BandwidthDataWriteEvent(std::unique_ptr<File> client_file, std::string initial_response, bool is_websocket) 
         : IoEvent(std::move(client_file)), 
           response_(std::move(initial_response)), 
-          ring_(ring), 
           sent_bytes_(0),
           is_websocket_(is_websocket),
           state_(STATE_INITIAL_WRITE),
@@ -125,7 +124,6 @@ public:
 
 private:
     std::string response_;
-    struct io_uring* ring_;
     size_t sent_bytes_;
     bool is_websocket_;
     State state_;
@@ -134,7 +132,7 @@ private:
 
     void schedule_timer() {
         if (!timer_event_) {
-            timer_event_ = new BandwidthDataTimerEvent(this, ring_);
+            timer_event_ = new BandwidthDataTimerEvent(this);
         }
         // Timer event handles its own prep
         timer_event_->prepare_timer();
@@ -225,8 +223,8 @@ private:
     }
 };
 
-inline BandwidthDataTimerEvent::BandwidthDataTimerEvent(BandwidthDataWriteEvent* writer, struct io_uring* ring)
-    : IoEvent(-1), writer_(writer), ring_(ring) {}
+inline BandwidthDataTimerEvent::BandwidthDataTimerEvent(BandwidthDataWriteEvent* writer)
+    : IoEvent(-1), writer_(writer) {}
 
 inline void BandwidthDataTimerEvent::post(int id, int res) {
     writer_->trigger_live_update();

@@ -22,7 +22,7 @@
 #include "bandwidth_monitor/accept_event.hpp"
 #include "bandwidth_monitor/bandwidth_data_read_event.hpp"
 #include "bandwidth_monitor/bandwidth_data_write_event.hpp"
-#include "lennox_server/simple_webserver.hpp"
+#include "aio_landing/aio_landing_server.hpp"
 
 // Constants
 const std::string INTERFACE = "wlan0";
@@ -83,48 +83,72 @@ void log_entry(time_t ts, int d, int m, int y, int h, unsigned long long tx, uns
     }
 }
 
-void server_func() {
+int setup_server_socket(int port) {
     int server_fd;
     struct sockaddr_in address{};
     int opt = 1;
 
     if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
         perror("socket failed");
-        return;
+        return -1;
     }
 
     if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt))) {
         perror("setsockopt");
-        return;
+        close(server_fd);
+        return -1;
     }
 
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = INADDR_ANY;
-    address.sin_port = htons(SERVER_PORT);
+    address.sin_port = htons(port);
 
     if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
         perror("bind failed");
-        return;
+        close(server_fd);
+        return -1;
     }
 
-    if (listen(server_fd, 3) < 0) {
+    if (listen(server_fd, 10) < 0) {
         perror("listen");
+        close(server_fd);
+        return -1;
+    }
+    return server_fd;
+}
+
+void server_func() {
+    int ws_fd = setup_server_socket(SERVER_PORT);
+    if (ws_fd < 0) return;
+
+    int http_fd = setup_server_socket(HTTP_PORT);
+    if (http_fd < 0) {
+        close(ws_fd);
         return;
     }
 
     std::cout << "io_uring WebSocket Server listening on port " << SERVER_PORT << std::endl;
+    std::cout << "io_uring HTTP Landing Server listening on port " << HTTP_PORT << std::endl;
 
     // Initialize io_uring
     struct io_uring ring;
-    if (io_uring_queue_init(256, &ring, 0) < 0) {
+    if (io_uring_queue_init(512, &ring, 0) < 0) {
         perror("io_uring_queue_init");
+        close(ws_fd);
+        close(http_fd);
         return;
     }
 
-    // Wrap the server socket in a File object and transfer ownership to the AcceptEvent
-    auto server_file = std::make_unique<File>(server_fd);
-    auto* accept_ev = new BandwidthMonitorAcceptEvent(std::move(server_file), &ring);
-    accept_ev->prepare_accept();
+    // Setup WebSocket Accept Event
+    auto ws_file = std::make_unique<File>(ws_fd);
+    auto* ws_accept_ev = new BandwidthMonitorAcceptEvent(std::move(ws_file));
+    ws_accept_ev->prepare_accept();
+
+    // Setup HTTP Landing Accept Event
+    auto http_file = std::make_unique<File>(http_fd);
+    auto* http_accept_ev = new AioLandingAcceptEvent(std::move(http_file));
+    http_accept_ev->prepare_accept();
+
     IoUringManager::getInstance().submit_events(&ring);
     io_uring_submit(&ring);
 
@@ -150,7 +174,6 @@ void server_func() {
         io_uring_cqe_seen(&ring, cqe);
         
         // Ensure pending submissions (like from post()) are sent
-        // Note: In high load, you might want to batch this or use SQPOLL
         IoUringManager::getInstance().submit_events(&ring);
         io_uring_submit(&ring); 
     }
@@ -158,22 +181,13 @@ void server_func() {
     io_uring_queue_exit(&ring);
 }
 
-void http_server_func() {
-    SimpleWebserver server;
-    server.run(HTTP_PORT);
-}
-
 int main() {
     std::cout << "Starting bandwidth monitor for " << INTERFACE << "..." << std::endl;
     std::cout << "Logging hourly and daily totals to " << LOG_FILE << std::endl;
     
-    // Start io_uring websocket server thread
+    // Start unified io_uring server thread
     std::thread server_t(server_func);
     server_t.detach();
-
-    // Start serial HTTP server thread (Lennox integration)
-    std::thread http_t(http_server_func);
-    http_t.detach();
 
     unsigned long long rx_prev = read_bytes(RX_FILE);
 

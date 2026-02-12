@@ -11,8 +11,8 @@
 class BandwidthMonitorAcceptEvent : public IoEvent {
 public:
     // Takes ownership of the listening server socket file descriptor
-    BandwidthMonitorAcceptEvent(std::unique_ptr<File> server_file, struct io_uring* ring) 
-        : IoEvent(std::move(server_file)), ring_(ring) {
+    BandwidthMonitorAcceptEvent(std::unique_ptr<File> server_file) 
+        : IoEvent(std::move(server_file)) {
         client_addr_len_ = sizeof(client_addr_);
     }
 
@@ -34,7 +34,7 @@ public:
         std::cout << "[ACCEPT] New connection on FD " << res << std::endl;
 
         // Create and enqueue the ReadEvent for the new client, transferring ownership of the FD
-        auto* read_ev = new BandwidthDataReadEvent(std::move(client_file), ring_);
+        auto* read_ev = new BandwidthDataReadEvent(std::move(client_file));
         read_ev->prepare_read();
 
         // Re-arm the accept event to listen for the next connection
@@ -46,7 +46,6 @@ public:
     }
 
 private:
-    struct io_uring* ring_;
     struct sockaddr_in client_addr_{};
     socklen_t client_addr_len_;
 };
