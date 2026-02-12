@@ -14,10 +14,10 @@ public:
     void prepare_timer() {
         ts_.tv_sec = 1;
         ts_.tv_nsec = 0;
-        IoUringManager::getInstance().cache_call(this, io_uring_prep_timeout, &ts_, 0, 0);
+        IoUringManager::getInstance().cache_call(this, ID_DEFAULT, io_uring_prep_timeout, &ts_, 0, 0);
     }
 
-    void post(int res) override;
+    void post(int id, int res) override;
 
     std::string get_info() const override { return "BandwidthDataTimerEvent"; }
 

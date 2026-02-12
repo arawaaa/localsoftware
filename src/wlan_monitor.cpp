@@ -18,6 +18,7 @@
 
 #include "common/io_event.hpp"
 #include "common/io_uring_manager.hpp"
+#include "common/defs.hpp"
 #include "bandwidth_monitor/accept_event.hpp"
 #include "bandwidth_monitor/bandwidth_data_read_event.hpp"
 #include "bandwidth_monitor/bandwidth_data_write_event.hpp"
@@ -135,12 +136,15 @@ void server_func() {
             continue;
         }
 
-        IoEvent* ev = reinterpret_cast<IoEvent*>(io_uring_cqe_get_data(cqe));
-        if (ev) {
-            auto [success, result_code] = ev->abstract_event_success(cqe->res);
+        EventData* data = reinterpret_cast<EventData*>(io_uring_cqe_get_data(cqe));
+        if (data) {
+            IoEvent* ev = data->event;
+            int id = data->id;
+            auto [success, result_code] = ev->abstract_event_success(id, cqe->res);
             if (success) {
-                ev->post(result_code);
+                ev->post(id, result_code);
             }
+            delete data;
         }
 
         io_uring_cqe_seen(&ring, cqe);

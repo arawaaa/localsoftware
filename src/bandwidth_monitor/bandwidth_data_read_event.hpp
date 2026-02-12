@@ -23,10 +23,10 @@ public:
     }
 
     void prepare_read() {
-        IoUringManager::getInstance().cache_call(this, io_uring_prep_recv, fd_, buffer_.data(), buffer_.size(), 0);
+        IoUringManager::getInstance().cache_call(this, ID_DEFAULT, io_uring_prep_recv, fd_, buffer_.data(), buffer_.size(), 0);
     }
 
-    void post(int res) override {
+    void post(int id, int res) override {
         if (res <= 0) {
             delete this;
             return;

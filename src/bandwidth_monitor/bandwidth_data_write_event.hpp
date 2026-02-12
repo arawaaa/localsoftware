@@ -54,10 +54,10 @@ public:
     void prepare_write() {
         const char* data_ptr = response_.c_str() + sent_bytes_;
         size_t remaining = response_.length() - sent_bytes_;
-        IoUringManager::getInstance().cache_call(this, io_uring_prep_send, fd_, data_ptr, remaining, MSG_NOSIGNAL);
+        IoUringManager::getInstance().cache_call(this, ID_DEFAULT, io_uring_prep_send, fd_, data_ptr, remaining, MSG_NOSIGNAL);
     }
 
-    void post(int res) override {
+    void post(int id, int res) override {
         if (res <= 0) {
             delete this; 
             return; 
@@ -228,6 +228,6 @@ private:
 inline BandwidthDataTimerEvent::BandwidthDataTimerEvent(BandwidthDataWriteEvent* writer, struct io_uring* ring)
     : IoEvent(-1), writer_(writer), ring_(ring) {}
 
-inline void BandwidthDataTimerEvent::post(int res) {
+inline void BandwidthDataTimerEvent::post(int id, int res) {
     writer_->trigger_live_update();
 }

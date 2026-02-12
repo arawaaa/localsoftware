@@ -23,12 +23,12 @@ public:
     /**
      * @brief Handle the completion queue entry (CQE) result.
      */
-    virtual void post(int res) = 0;
+    virtual void post(int id, int res) = 0;
 
     /**
      * @brief Checks if the event was successful and returns a success flag along with a result code.
      */
-    virtual std::pair<bool, int> abstract_event_success(int res) { return {true, res}; }
+    virtual std::pair<bool, int> abstract_event_success(int id, int res) { return {true, res}; }
 
     virtual std::string get_info() const = 0;
 

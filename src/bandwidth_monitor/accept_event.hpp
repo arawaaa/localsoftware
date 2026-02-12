@@ -17,12 +17,12 @@ public:
     }
 
     void prepare_accept() {
-        IoUringManager::getInstance().cache_call(this, io_uring_prep_accept, fd_, 
+        IoUringManager::getInstance().cache_call(this, ID_DEFAULT, io_uring_prep_accept, fd_, 
                          reinterpret_cast<struct sockaddr*>(&client_addr_), 
                          &client_addr_len_, 0);
     }
 
-    void post(int res) override {
+    void post(int id, int res) override {
         if (res < 0) {
             // Re-arm to keep accepting even on failure
             prepare_accept();
