@@ -27,6 +27,7 @@ public:
     }
 
     void post(int id, int res) override {
+        std::cout << res << std::endl;
         if (res <= 0) {
             delete this;
             return;

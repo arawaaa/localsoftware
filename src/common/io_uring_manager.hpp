@@ -30,7 +30,7 @@ public:
 
     void add(int id, int res, IoEvent* ev) {
         std::lock_guard<std::mutex> lock(non_uring_mutex_);
-        non_uring_events_.emplace_back(id, res, ev);
+        non_uring_events_.emplace_back(id | RequestID::FLAG_REDO_CACHED_DATA, res, ev);
     }
 
     std::optional<std::tuple<int, int, IoEvent*>> dequeue_non_uring_event() {

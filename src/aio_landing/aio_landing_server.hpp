@@ -8,7 +8,8 @@
 
 class AioLandingHTTP : public InetSocketReadWriteEventHTTP {
 public:
-    using InetSocketReadWriteEventHTTP::InetSocketReadWriteEventHTTP;
+    AioLandingHTTP(std::unique_ptr<File> file, bool enable_tls)
+        : InetSocketReadWriteEventHTTP(std::move(file), enable_tls) {}
 
     void post(int id, int res) override {
         if (res <= 0) {
@@ -59,7 +60,8 @@ public:
 
 class AioLandingAcceptEvent : public IoEvent {
 public:
-    AioLandingAcceptEvent(std::unique_ptr<File> server_file) : IoEvent(std::move(server_file)) {
+    AioLandingAcceptEvent(std::unique_ptr<File> server_file, bool use_tls)
+        : IoEvent(std::move(server_file)), use_tls(use_tls) {
         client_addr_len_ = sizeof(client_addr_);
     }
 
@@ -71,8 +73,9 @@ public:
 
     void post(int id, int res) override {
         if (res >= 0) {
+            std::cout << "P80 Accept New Connection" << std::endl;
             auto client_file = std::make_unique<File>(res);
-            auto* http_ev = new AioLandingHTTP(std::move(client_file));
+            auto* http_ev = new AioLandingHTTP(std::move(client_file), use_tls);
             http_ev->read_http();
         }
         // Re-arm immediately
@@ -84,4 +87,5 @@ public:
 private:
     struct sockaddr_in client_addr_{};
     socklen_t client_addr_len_;
+    bool use_tls;
 };

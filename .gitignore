@@ -8,3 +8,4 @@ wlan_usage.log
 *.log
 home-assistant-lennox-local-https/
 .cache/
+redeploy.sh

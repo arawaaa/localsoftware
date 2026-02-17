@@ -31,6 +31,7 @@ const std::string TX_FILE = "/sys/class/net/" + INTERFACE + "/statistics/tx_byte
 const std::string LOG_FILE = "/var/log/wlan_monitor/wlan_usage.log";
 constexpr int SERVER_PORT = 8888;
 constexpr int HTTP_PORT = 80;
+constexpr int HTTPS_PORT = 443;
 
 // Global speed state
 double global_rx_speed = 0.0;
@@ -127,8 +128,16 @@ void server_func() {
         return;
     }
 
+    int https_fd = setup_server_socket(HTTPS_PORT);
+    if (https_fd < 0) {
+        close(http_fd);
+        close(ws_fd);
+        return;
+    }
+
     std::cout << "io_uring WebSocket Server listening on port " << SERVER_PORT << std::endl;
     std::cout << "io_uring HTTP Landing Server listening on port " << HTTP_PORT << std::endl;
+    std::cout << "io_uring HTTPS Landing Server listening on port " << HTTPS_PORT << std::endl;
 
     // Initialize io_uring
     struct io_uring ring;
@@ -146,8 +155,13 @@ void server_func() {
 
     // Setup HTTP Landing Accept Event
     auto http_file = std::make_unique<File>(http_fd);
-    auto* http_accept_ev = new AioLandingAcceptEvent(std::move(http_file));
+    auto* http_accept_ev = new AioLandingAcceptEvent(std::move(http_file), true);
     http_accept_ev->prepare_accept();
+
+    // Setup HTTPS Landing Accept Event
+    auto https_file = std::make_unique<File>(https_fd);
+    auto* https_accept_ev = new AioLandingAcceptEvent(std::move(https_file), true);
+    https_accept_ev->prepare_accept();
 
     IoUringManager::getInstance().submit_events(&ring);
     io_uring_submit(&ring);

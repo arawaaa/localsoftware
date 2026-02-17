@@ -12,6 +12,8 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 
+#include <iostream>
+
 namespace http = boost::beast::http;
 
 /**
@@ -54,6 +56,9 @@ public:
                 throw std::runtime_error{"Failed to create ssl object"};
             }
 
+            readbuf_ = BIO_new(BIO_s_mem());
+            writebuf_ = BIO_new(BIO_s_mem());
+            SSL_set_bio(ssl_, readbuf_, writebuf_);
             state_ = TLSState::WaitHello;
         }
     }
@@ -97,11 +102,17 @@ public:
             });
             if (ec) break;
         }
-        arm_write(RequestID::ID_WRITE);
+
+        if (tls_enabled_) {
+            // Start a non-uring event so that the writes can be handled in one logic flow
+            IoUringManager::getInstance().add(RequestID::ID_WRITE, 0, this);
+        } else {
+            arm_write(RequestID::ID_WRITE);
+        }
     }
 
     std::pair<bool, int> abstract_event_success(int id, int res) override {
-        if (res < 0) return {false, res}; // Error
+        if (res <= 0 && !((id & RequestID::FLAG_REDO_CACHED_DATA) && res == 0)) return {true, -1}; // Error
         
         if (id & ID_READ) {
             if (tls_enabled_) {
@@ -134,6 +145,7 @@ protected:
         Full
     };
 
+    int num = 0;
     SSL_CTX* tls_ctx_;
     SSL* ssl_;
     BIO *writebuf_, *readbuf_;
@@ -144,21 +156,25 @@ protected:
     std::function<int(size_t*)> read_func_cached_, write_func_cached_;
 
     std::pair<bool, int> handle_read_tls(int id, int res) {
-        if (res < 0) return {true, res};
+        BIO_write(readbuf_, encryptread_, res);
         if (state_ == TLSState::WaitHello) {
             int ec = SSL_accept(ssl_);
             if (SSL_get_error(ssl_, ec) == SSL_ERROR_WANT_READ) {
-                arm_read(id); // We cannot be an internal request
-                arm_write(id, true);
+                BIO_read_ex(writebuf_, encryptwrite_, 2048, &write_length_);
+                if (write_length_) {
+                    arm_write(id, true);
+                } else {
+                    arm_read(id);
+                }
                 return {false, res};
             } else if (SSL_get_error(ssl_, ec) != SSL_ERROR_NONE) { // SSL_ERROR_WANT_WRITE shouldn't happen
+                ERR_print_errors_fp(stderr);
                 return {true, -1};
             } else {
                 state_ = TLSState::Full;
             }
         }
         if (state_ == TLSState::Full) { // TLSState::Full
-            BIO_write(readbuf_, encryptread_, res);
             bool read_any = false;
             while (BIO_ctrl_pending(readbuf_)) {
                 size_t readbytes = 0;
@@ -176,7 +192,13 @@ protected:
                 switch (SSL_get_error(ssl_, ret)) {
                     case SSL_ERROR_WANT_READ:
                         read_retry_ = true;
-                        arm_read(id, id & RequestID::FLAG_INTERNAL);
+                        if (BIO_ctrl_pending(writebuf_)) {
+                            BIO_read_ex(writebuf_, encryptwrite_, 2048, &write_length_);
+                            read_active_ = false;
+                            arm_write(id, true);
+                        } else {
+                            arm_read(id, id & RequestID::FLAG_INTERNAL);
+                        }
                         goto ret_retry; // shouldn't have actually written anything to buffer_
                     case SSL_ERROR_WANT_WRITE:
                         if (!read_any && id & RequestID::FLAG_INTERNAL) {
@@ -203,12 +225,14 @@ protected:
             }
 
             // Don't parse requests on internal-only requests, and only parse when the consumer asks for it
-            if (!(id & RequestID::FLAG_INTERNAL) && try_parse())
-                return {true, 0};
-            else if (!(id & RequestID::FLAG_INTERNAL))
+            if (!(id & RequestID::FLAG_INTERNAL) && try_parse()) {
+                return {true, 1};
+            } else if (!(id & RequestID::FLAG_INTERNAL))
                 arm_read(id);
-            else
+            else {
+                read_active_ = false;
                 IoUringManager::getInstance().add(RequestID::ID_WRITE, 0, this);
+            }
         }
 
 ret_retry:
@@ -230,10 +254,7 @@ ret_retry:
     }
 
     std::pair<bool, int> handle_write_tls(int id, int res) {
-        // Assume handshake is complete. HTTP servers don't start sending data before at least one request is read
         if (res < 0) return {true, -1};
-        if (state_ == TLSState::WaitHello)
-            return {true, -1};
 
         int max_write_length = 2048, offset = 0;
         if (res < write_length_) {
@@ -241,6 +262,12 @@ ret_retry:
             max_write_length = 2048 - (write_length_ - res);
         }
         write_length_ = offset = write_length_ - res;
+
+        if (state_ == TLSState::WaitHello) {
+            write_active_ = false;
+            IoUringManager::getInstance().add(RequestID::ID_READ, 0, this);
+            return {false, res};
+        }
 
         size_t numread;
         int ret = SSL_write_ex(ssl_, write_buffer_.data().data(), write_buffer_.size(), &numread);
@@ -268,12 +295,13 @@ ret_retry:
                 write_retry_ = false;
                 write_buffer_.consume(numread);
                 if (id & RequestID::FLAG_INTERNAL) {
+                    write_active_ = false;
                     IoUringManager::getInstance().add(RequestID::ID_READ, 0, this);
                     return {false, res};
                 }
 
                 if (BIO_ctrl_pending(writebuf_) || write_buffer_.size()) {
-                    int ret = BIO_read(writebuf_, encryptread_ + offset, 2048 - write_length_);
+                    int ret = BIO_read(writebuf_, encryptwrite_ + offset, 2048 - write_length_);
                     write_length_ += ret;
                     arm_write(id);
                     return {false, res};
@@ -298,7 +326,7 @@ ret_retry:
     }
 
     void arm_read(int id, bool internal = false) {
-        if (read_active_ && !(id & RequestID::ID_WRITE)) return;
+        if (read_active_ && !(id & RequestID::ID_READ)) return;
         read_active_ = true;
         if (tls_enabled_) {
             IoUringManager::getInstance().cache_call(this, ID_READ | (internal ? FLAG_INTERNAL : 0), io_uring_prep_recv, fd_,
@@ -306,7 +334,7 @@ ret_retry:
         } else {
             // Prepare space in the flat_buffer for the next read
             auto mutable_buffer = buffer_.prepare(2048);
-            IoUringManager::getInstance().cache_call(this, ID_READ | (internal ? FLAG_INTERNAL : 0), io_uring_prep_recv, fd_,
+            IoUringManager::getInstance().cache_call(this, ID_READ | (internal ? FLAG_INTERNAL : 0), io_uring_prep_read, fd_,
                                                     mutable_buffer.data(), mutable_buffer.size(), 0);
         }
     }
