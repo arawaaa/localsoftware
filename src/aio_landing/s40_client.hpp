@@ -25,15 +25,34 @@ using tcp = net::ip::tcp;
 
 class S40Client {
 public:
-    S40Client() : ctx_(ssl::context::tlsv12_client) {
-        ctx_.set_verify_mode(ssl::verify_none);
+    static S40Client& getInstance() {
+        static S40Client instance;
+        return instance;
     }
+
+    S40Client(const S40Client&) = delete;
+    S40Client& operator=(const S40Client&) = delete;
 
     struct ZoneData {
         double temperature = 0.0;
         double humidity = 0.0;
         bool valid = false;
     };
+
+    double get_temperature() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return temperature_;
+    }
+
+    double get_humidity() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return humidity_;
+    }
+
+    bool is_data_valid() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return data_valid_;
+    }
 
     ZoneData fetch_data() {
         ZoneData result;
@@ -159,7 +178,36 @@ public:
     }
 
 private:
+    S40Client() : ctx_(ssl::context::tlsv12_client) {
+        ctx_.set_verify_mode(ssl::verify_none);
+        std::thread([this]() { loop(); }).detach();
+    }
+
+    void loop() {
+        while (true) {
+            std::cout << "[S40] Starting update cycle..." << std::endl;
+            ZoneData data = fetch_data();
+
+            if (data.valid) {
+                std::lock_guard<std::mutex> lock(mutex_);
+                temperature_ = data.temperature;
+                humidity_ = data.humidity;
+                data_valid_ = true;
+                std::cout << "[S40] Updated: Temp=" << temperature_ << ", Hum=" << humidity_ << std::endl;
+            } else {
+                std::cerr << "[S40] Failed to update data." << std::endl;
+            }
+
+            // Refresh every 3 minutes
+            std::this_thread::sleep_for(std::chrono::minutes(3));
+        }
+    }
+
     std::string host_ = "192.168.12.10";
     std::string client_id_ = "simple_zone_requester_cpp";
     ssl::context ctx_;
+    std::mutex mutex_;
+    double temperature_ = 0.0;
+    double humidity_ = 0.0;
+    bool data_valid_ = false;
 };

@@ -12,8 +12,6 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 
-#include <iostream>
-
 namespace http = boost::beast::http;
 
 /**
@@ -25,34 +23,7 @@ public:
         : IoEvent(std::move(file)), tls_enabled_(use_ssl)
     {
         if (tls_enabled_) {
-            tls_ctx_ = SSL_CTX_new(TLS_server_method());
-            if (tls_ctx_ == NULL) {
-                throw std::runtime_error{"Unable to create libssl context"};
-            }
-
-            if (!SSL_CTX_set_min_proto_version(tls_ctx_, TLS1_2_VERSION)) {
-                SSL_CTX_free(tls_ctx_);
-                throw std::runtime_error{"Unable to set minimum TLS version to 1.2"};
-            }
-
-            auto opts = SSL_OP_IGNORE_UNEXPECTED_EOF | SSL_OP_NO_RENEGOTIATION | SSL_OP_CIPHER_SERVER_PREFERENCE;
-            SSL_CTX_set_options(tls_ctx_, opts);
-
-            if (SSL_CTX_use_certificate_chain_file(tls_ctx_, "/etc/letsencrypt/live/arnavrawat.xyz/fullchain.pem") <= 0) {
-                SSL_CTX_free(tls_ctx_);
-                throw std::runtime_error{"Unable to load certificate chain"};
-            }
-
-            if (SSL_CTX_use_PrivateKey_file(tls_ctx_, "/etc/letsencrypt/live/arnavrawat.xyz/privkey.pem", SSL_FILETYPE_PEM) <= 0) {
-                SSL_CTX_free(tls_ctx_);
-                throw std::runtime_error{"Unable to load private key. Check for certificate / key mismatch."};
-            }
-
-            // No session resumption for now
-
-            SSL_CTX_set_verify(tls_ctx_, SSL_VERIFY_NONE, NULL);
-
-            if ((ssl_ = SSL_new(tls_ctx_)) == NULL) {
+            if ((ssl_ = SSL_new(IoUringManager::getInstance().get_tls_ctx())) == NULL) {
                 throw std::runtime_error{"Failed to create ssl object"};
             }
 
@@ -60,6 +31,14 @@ public:
             writebuf_ = BIO_new(BIO_s_mem());
             SSL_set_bio(ssl_, readbuf_, writebuf_);
             state_ = TLSState::WaitHello;
+        }
+    }
+
+    virtual ~InetSocketReadWriteEventHTTP() {
+        if (tls_enabled_) {
+            if (ssl_) {
+                SSL_free(ssl_);
+            }
         }
     }
 
@@ -112,6 +91,7 @@ public:
     }
 
     std::pair<bool, int> abstract_event_success(int id, int res) override {
+        // The Redo cached data flag lets us create events with res = 0
         if (res <= 0 && !((id & RequestID::FLAG_REDO_CACHED_DATA) && res == 0)) return {true, -1}; // Error
         
         if (id & ID_READ) {
@@ -140,13 +120,10 @@ protected:
 
     // TLS variables. Buffer procession for recv: recv -> encryptread -> ssl_read -> buffer_ -> parse
     enum TLSState {
-
         WaitHello,
         Full
     };
 
-    int num = 0;
-    SSL_CTX* tls_ctx_;
     SSL* ssl_;
     BIO *writebuf_, *readbuf_;
     char encryptread_[2048], encryptwrite_[2048];
@@ -306,7 +283,7 @@ ret_retry:
                     arm_write(id);
                     return {false, res};
                 } else {
-                    return {true, 0};
+                    return {true, 1};
                 }
             default:
                 return {true, -1};

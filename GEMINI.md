@@ -8,9 +8,10 @@ A real-time bandwidth monitoring system for Raspberry Pi and investigation tools
 - **Backend (`wlan_monitor.cpp`):** An asynchronous C++20 application utilizing `io_uring` for high-performance, multi-user handling. It polls `/sys/class/net/wlan0/statistics`, logs usage to `/var/log/wlan_monitor/`, and streams data over WebSockets (Port 8888).
 - **AIO Landing Server:** A unified `io_uring` server that also listens on Port 80, serving a landing dashboard via `AioLandingHTTP`.
 - **Architecture:** 
-    - **Centralized Management:** Managed by `IoUringManager` (Singleton), which handles `io_uring` SQE allocation and event dispatching.
-    - **Decoupled Events:** `IoEvent` subclasses register operations via `cache_call` without direct ring access.
-    - **HTTP Protocol Support:** Utilizes `boost::beast` parsers and serializers within `InetSocketReadWriteEventHTTP` for efficient, non-blocking HTTP handling.
+    - **Centralized Management:** Managed by `IoUringManager` (Singleton), which handles `io_uring` SQE allocation, event dispatching, and a centralized `SSL_CTX` for TLS connections.
+    - **Unified Event Loop:** `wlan_monitor.cpp` processes both `io_uring` completions (CQEs) and an internal non-uring event queue for manual event triggering (e.g., re-processing cached data).
+    - **Decoupled Events:** `IoEvent` subclasses register operations via `cache_call` or the non-uring `add` method.
+    - **HTTP/TLS Protocol Support:** Utilizes `boost::beast` and OpenSSL via `InetSocketReadWriteEventHTTP`.
 - **Frontend (`monitoringindex.html`):** A self-hosted Chart.js application served from `/srv/` that visualizes live traffic and historical logs.
 
 ### Lennox S40 Integration
@@ -36,34 +37,31 @@ clang++ --target=arm-linux-gnueabihf --sysroot=./rpi-sysroot \
 ```
 
 ### Deployment
-1. Copy files to the Pi (IP: `192.168.12.223`):
+The `redeploy.sh` script automates cross-compilation, file transfer, and service restart on the Pi (IP: `192.168.12.223`).
+
+```bash
+./redeploy.sh
+```
+
+1. **Manual Deployment (Legacy):**
    ```bash
    scp wlan_monitor_bin src/bandwidth_monitor/monitoringindex.html \
        src/aio_landing/dashboard.html src/aio_landing/landing.html \
        config/wlan_monitor.service rapi@192.168.12.223:~/
    ```
-2. Move to system locations:
-   - Binary: `/usr/local/bin/wlan_monitor`
-   - Monitoring Frontend: `/srv/monitoringindex.html`
-   - Landing Dashboard: `/srv/landing.html`
-   - Bandwidth Dashboard: `/srv/dashboard.html`
-   - Service: `/etc/systemd/system/wlan_monitor.service`
-3. Initialize Logging:
-   ```bash
-   sudo mkdir -p /var/log/wlan_monitor && sudo chown rapi:rapi /var/log/wlan_monitor
-   ```
-4. Permissions & Restart:
-   ```bash
-   sudo setcap "cap_net_bind_service=+ep" /usr/local/bin/wlan_monitor
-   sudo systemctl daemon-reload && sudo systemctl restart wlan_monitor.service
-   ```
+2. **Setup on Pi:**
+   - Move files to `/usr/local/bin/` and `/srv/`.
+   - Initialize logging in `/var/log/wlan_monitor/`.
+   - Set capabilities: `sudo setcap "cap_net_bind_service=+ep" /usr/local/bin/wlan_monitor`.
+   - Restart: `sudo systemctl daemon-reload && sudo systemctl restart wlan_monitor.service`.
 
 ## Key Files
 
 - `wlan_monitor.cpp`: Main application entry point and unified event loop.
-- `io_uring_manager.hpp`: Singleton manager for `io_uring` submissions and event tracking.
+- `redeploy.sh`: Automated build and deployment script.
+- `io_uring_manager.hpp`: Singleton manager for `io_uring`, centralized `SSL_CTX`, and non-uring events.
 - `io_event.hpp`: Clean base class for all asynchronous events.
-- `inet_socket_read_write_event_http.hpp`: HTTP-aware socket reading/writing using Boost.Beast.
+- `inet_socket_read_write_event_http.hpp`: HTTP/TLS-aware socket reading/writing.
 - `aio_landing_server.hpp`: Implementation of the AIO landing page HTTP server.
 - `landing.html`: Personal landing page overview.
 - `accept_event.hpp`: Handles new client connections for the bandwidth monitor.

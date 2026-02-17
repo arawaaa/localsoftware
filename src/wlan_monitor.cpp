@@ -155,12 +155,12 @@ void server_func() {
 
     // Setup HTTP Landing Accept Event
     auto http_file = std::make_unique<File>(http_fd);
-    auto* http_accept_ev = new AioLandingAcceptEvent(std::move(http_file), true);
+    auto* http_accept_ev = new AioLandingAcceptEvent(std::move(http_file), false, "/srv/landing");
     http_accept_ev->prepare_accept();
 
     // Setup HTTPS Landing Accept Event
     auto https_file = std::make_unique<File>(https_fd);
-    auto* https_accept_ev = new AioLandingAcceptEvent(std::move(https_file), true);
+    auto* https_accept_ev = new AioLandingAcceptEvent(std::move(https_file), true, "/srv/landing");
     https_accept_ev->prepare_accept();
 
     IoUringManager::getInstance().submit_events(&ring);
