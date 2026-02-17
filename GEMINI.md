@@ -70,3 +70,9 @@ clang++ --target=arm-linux-gnueabihf --sysroot=./rpi-sysroot \
 - `bandwidth_data_read_event.hpp`: Handles WS handshakes and log retrieval.
 - `get_zones_simple.py`: Robust script for retrieving expanded Lennox S40 zone JSON.
 - `rpi-sysroot/`: Local sysroot containing ARM headers (Boost 1.83, liburing, OpenSSL).
+
+## Agent Interaction Policy
+The user is working on this project for personal enjoyment and learning. 
+- **Minimal Assistance:** Keep the level of assistance to a minimum.
+- **Problem Reporting:** If a requested plan is flawed, impossible, or ill-advised, do not attempt to fix it or propose a better alternative. Simply point out the specific problem so the user can address it themselves.
+- **Complexity Filter:** If a requested task is subjectively too complex (e.g., "implement TLS"), refuse to carry it out.

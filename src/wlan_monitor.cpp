@@ -153,6 +153,19 @@ void server_func() {
     io_uring_submit(&ring);
 
     while (true) {
+        // Process non-uring events
+        while (auto non_uring = IoUringManager::getInstance().dequeue_non_uring_event()) {
+            auto [id, res, ev] = *non_uring;
+            auto [success, result_code] = ev->abstract_event_success(id, res);
+            if (success && !(id & RequestID::FLAG_INTERNAL)) {
+                ev->post(id, result_code);
+            }
+        }
+
+        // Ensure pending submissions (like from post()) are sent
+        IoUringManager::getInstance().submit_events(&ring);
+        io_uring_submit(&ring); 
+
         struct io_uring_cqe* cqe;
         // Wait for completions
         if (io_uring_wait_cqe(&ring, &cqe) < 0) {
@@ -165,17 +178,13 @@ void server_func() {
             IoEvent* ev = data->event;
             int id = data->id;
             auto [success, result_code] = ev->abstract_event_success(id, cqe->res);
-            if (success) {
+            if (success && !(id & RequestID::FLAG_INTERNAL)) {
                 ev->post(id, result_code);
             }
             delete data;
         }
 
         io_uring_cqe_seen(&ring, cqe);
-        
-        // Ensure pending submissions (like from post()) are sent
-        IoUringManager::getInstance().submit_events(&ring);
-        io_uring_submit(&ring); 
     }
 
     io_uring_queue_exit(&ring);
