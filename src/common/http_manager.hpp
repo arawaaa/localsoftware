@@ -61,8 +61,9 @@ public:
                 
                 std::ifstream ifs(canonical_path, std::ios::binary);
                 if (ifs) {
-                    std::string content((std::istreambuf_iterator<char>(ifs)),
-                                        (std::istreambuf_iterator<char>()));
+                    std::string content;
+                    content.resize(fs::file_size(canonical_path));
+                    ifs.read(&content[0], content.size());
                     
                     http::response<http::string_body> res{http::status::ok, req.version()};
                     res.set(http::field::server, "AIO-Landing");

@@ -14,7 +14,6 @@ public:
         : InetSocketReadWriteEventHTTP(std::move(file), enable_tls), http_manager_(http_manager) {}
 
     void post(int id, int res) override {
-        std::cout << res << ' ' << id << std::endl;
         if (res <= 0) {
             delete this;
             return;

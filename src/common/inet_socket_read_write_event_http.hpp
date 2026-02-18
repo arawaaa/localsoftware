@@ -126,7 +126,7 @@ protected:
 
     SSL* ssl_;
     BIO *writebuf_, *readbuf_;
-    char encryptread_[2048], encryptwrite_[2048];
+    char encryptread_[4096], encryptwrite_[4096];
     size_t write_length_;
     bool tls_enabled_;
     TLSState state_;
@@ -137,7 +137,7 @@ protected:
         if (state_ == TLSState::WaitHello) {
             int ec = SSL_accept(ssl_);
             if (SSL_get_error(ssl_, ec) == SSL_ERROR_WANT_READ) {
-                BIO_read_ex(writebuf_, encryptwrite_, 2048, &write_length_);
+                BIO_read_ex(writebuf_, encryptwrite_, 4096, &write_length_);
                 if (write_length_) {
                     arm_write(id, true);
                 } else {
@@ -160,7 +160,7 @@ protected:
                     ret = read_func_cached_(&readbytes);
                     read_retry_ = false;
                 } else {
-                    auto mutable_buffer = buffer_.prepare(2048);
+                    auto mutable_buffer = buffer_.prepare(4096);
                     read_func_cached_ = [&](size_t* readbytes) {
                         return SSL_read_ex(ssl_, mutable_buffer.data(), mutable_buffer.size(), readbytes);
                     };
@@ -170,7 +170,7 @@ protected:
                     case SSL_ERROR_WANT_READ:
                         read_retry_ = true;
                         if (BIO_ctrl_pending(writebuf_)) {
-                            BIO_read_ex(writebuf_, encryptwrite_, 2048, &write_length_);
+                            BIO_read_ex(writebuf_, encryptwrite_, 4096, &write_length_);
                             read_active_ = false;
                             arm_write(id, true);
                         } else {
@@ -233,10 +233,10 @@ ret_retry:
     std::pair<bool, int> handle_write_tls(int id, int res) {
         if (res < 0) return {true, -1};
 
-        int max_write_length = 2048, offset = 0;
+        int max_write_length = 4096, offset = 0;
         if (res < write_length_) {
             memmove(encryptwrite_, encryptwrite_ + res, write_length_ - res);
-            max_write_length = 2048 - (write_length_ - res);
+            max_write_length = 4096 - (write_length_ - res);
         }
         write_length_ = offset = write_length_ - res;
 
@@ -256,7 +256,7 @@ ret_retry:
                 // Make sure our entire write BIO is sent out to make sure the read "works"
                 write_retry_ = true;
                 if (BIO_ctrl_pending(writebuf_) || write_length_) {
-                    BIO_read(writebuf_, encryptwrite_ + offset, 2048 - write_length_);
+                    BIO_read(writebuf_, encryptwrite_ + offset, 4096 - write_length_);
                     arm_write(id);
                 } else {
                     // Nothing else to write out, start read
@@ -278,7 +278,7 @@ ret_retry:
                 }
 
                 if (BIO_ctrl_pending(writebuf_) || write_buffer_.size()) {
-                    int ret = BIO_read(writebuf_, encryptwrite_ + offset, 2048 - write_length_);
+                    int ret = BIO_read(writebuf_, encryptwrite_ + offset, 4096 - write_length_);
                     write_length_ += ret;
                     arm_write(id);
                     return {false, res};
@@ -307,10 +307,10 @@ ret_retry:
         read_active_ = true;
         if (tls_enabled_) {
             IoUringManager::getInstance().cache_call(this, ID_READ | (internal ? FLAG_INTERNAL : 0), io_uring_prep_recv, fd_,
-                                                    encryptread_, 2048, 0);
+                                                    encryptread_, 4096, 0);
         } else {
             // Prepare space in the flat_buffer for the next read
-            auto mutable_buffer = buffer_.prepare(2048);
+            auto mutable_buffer = buffer_.prepare(4096);
             IoUringManager::getInstance().cache_call(this, ID_READ | (internal ? FLAG_INTERNAL : 0), io_uring_prep_read, fd_,
                                                     mutable_buffer.data(), mutable_buffer.size(), 0);
         }
