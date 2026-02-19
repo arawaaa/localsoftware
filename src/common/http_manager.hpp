@@ -99,6 +99,7 @@ private:
         if (ext == ".gif") return "image/gif";
         if (ext == ".svg") return "image/svg+xml";
         if (ext == ".txt") return "text/plain";
+        if (ext == ".pdf") return "application/pdf";
         return "application/octet-stream";
     }
 
