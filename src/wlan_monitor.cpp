@@ -167,6 +167,7 @@ void server_func() {
     io_uring_submit(&ring);
 
     while (true) {
+        // TODO Make this actually useful, instead of a function call wrapper. Integrate with coroutines
         // Process non-uring events
         while (auto non_uring = IoUringManager::getInstance().dequeue_non_uring_event()) {
             auto [id, res, ev] = *non_uring;
@@ -182,9 +183,13 @@ void server_func() {
 
         struct io_uring_cqe* cqe;
         // Wait for completions
-        if (io_uring_wait_cqe(&ring, &cqe) < 0) {
+        if (io_uring_wait_cqes(&ring, &cqe, 16, ) < 0) {
             perror("io_uring_wait_cqe");
             continue;
+        }
+
+        io_uring_for_each_cqe() {
+
         }
 
         EventData* data = reinterpret_cast<EventData*>(io_uring_cqe_get_data(cqe));

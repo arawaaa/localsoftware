@@ -50,9 +50,7 @@ public:
         parser_ = std::make_unique<http::request_parser<http::string_body>>();
         if (buffer_.size() > 0) {
             if (try_parse()) {
-                // Already have a full request from leftover data.
-                // Trigger a NOP to entry the event loop cycle and call post().
-                IoUringManager::getInstance().cache_call(this, ID_READ, io_uring_prep_nop);
+                IoUringManager::getInstance().add(RequestID::ID_READ, 0, this);
                 return;
             }
         }

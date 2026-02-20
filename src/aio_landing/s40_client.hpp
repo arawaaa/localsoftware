@@ -203,7 +203,7 @@ private:
         }
     }
 
-    std::string host_ = "192.168.12.10";
+    std::string host_ = "Lennox-S40-BT24E01839.local";
     std::string client_id_ = "simple_zone_requester_cpp";
     ssl::context ctx_;
     std::mutex mutex_;
