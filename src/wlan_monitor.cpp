@@ -182,8 +182,9 @@ void server_func() {
         io_uring_submit(&ring); 
 
         struct io_uring_cqe* cqe;
+        struct __kernel_timespec ts;
         // Wait for completions
-        if (io_uring_wait_cqes(&ring, &cqe, 16, ) < 0) {
+        if (io_uring_wait_cqes_min_timeout(&ring, &cqe, 16, &ts, ) < 0) {
             perror("io_uring_wait_cqe");
             continue;
         }
