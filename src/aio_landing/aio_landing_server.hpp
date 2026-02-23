@@ -22,25 +22,6 @@ public:
         if (id == ID_READ) {
             auto req = parser_->get();
             if (req.method() == http::verb::get) {
-                if (req.target() == "/temperature") {
-                    http::response<http::string_body> resp{http::status::ok, req.version()};
-                    resp.set(http::field::content_type, "text/plain");
-                    resp.set(http::field::connection, "keep-alive");
-                    resp.body() = std::to_string(S40Client::getInstance().get_temperature());
-                    resp.prepare_payload();
-                    write_http(std::move(resp));
-                    return;
-                } else if (req.target() == "/humidity") {
-                    http::response<http::string_body> resp{http::status::ok, req.version()};
-                    resp.set(http::field::content_type, "text/plain");
-                    resp.set(http::field::connection, "keep-alive");
-                    resp.body() = std::to_string(S40Client::getInstance().get_humidity());
-                    resp.prepare_payload();
-                    write_http(std::move(resp));
-                    return;
-                }
-
-                // Use HTTPManager for other paths or static files
                 write_http(http_manager_.handle_request(req));
             } else {
                 delete this;
@@ -63,6 +44,36 @@ public:
         : IoEvent(std::move(server_file)), use_tls(use_tls), http_manager_(base_dir)
     {
         client_addr_len_ = sizeof(client_addr_);
+
+        auto keep_alive_headers = std::vector<std::pair<http::field, std::string>>{
+            {http::field::content_type, "text/plain"},
+            {http::field::connection, "keep-alive"}
+        };
+
+        http_manager_.add_endpoint("/temperature", [keep_alive_headers](const auto& req) {
+            return HTTPManager::prepare_response(keep_alive_headers, http::status::ok, 
+                std::to_string(S40Client::getInstance().get_temperature()), req.version());
+        });
+
+        http_manager_.add_endpoint("/humidity", [keep_alive_headers](const auto& req) {
+            return HTTPManager::prepare_response(keep_alive_headers, http::status::ok, 
+                std::to_string(S40Client::getInstance().get_humidity()), req.version());
+        });
+
+        http_manager_.add_endpoint("/setpoint", [keep_alive_headers](const auto& req) {
+            return HTTPManager::prepare_response(keep_alive_headers, http::status::ok, 
+                std::to_string(S40Client::getInstance().get_setpoint()), req.version());
+        });
+
+        http_manager_.add_endpoint("/mode", [keep_alive_headers](const auto& req) {
+            return HTTPManager::prepare_response(keep_alive_headers, http::status::ok, 
+                S40Client::getInstance().get_mode(), req.version());
+        });
+
+        http_manager_.add_endpoint("/fan", [keep_alive_headers](const auto& req) {
+            return HTTPManager::prepare_response(keep_alive_headers, http::status::ok, 
+                std::to_string(S40Client::getInstance().get_fan()), req.version());
+        });
     }
 
     void prepare_accept() {

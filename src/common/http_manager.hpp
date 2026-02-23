@@ -4,6 +4,10 @@
 #include <filesystem>
 #include <fstream>
 #include <optional>
+#include <functional>
+#include <map>
+#include <vector>
+#include <utility>
 #include <boost/beast/http.hpp>
 
 namespace http = boost::beast::http;
@@ -11,6 +15,8 @@ namespace fs = std::filesystem;
 
 class HTTPManager {
 public:
+    using Handler = std::function<http::response<http::string_body>(const http::request<http::string_body>&)>;
+
     explicit HTTPManager(const std::string& base_dir) {
         try {
             base_path_ = fs::canonical(base_dir);
@@ -22,6 +28,24 @@ public:
         }
     }
 
+    void add_endpoint(std::string endpoint, Handler handler) {
+        handlers_[std::move(endpoint)] = std::move(handler);
+    }
+
+    static http::response<http::string_body> prepare_response(
+        const std::vector<std::pair<http::field, std::string>>& headers,
+        http::status status,
+        const std::string& body,
+        unsigned version = 11) {
+        http::response<http::string_body> res{status, version};
+        for (const auto& [field, value] : headers) {
+            res.set(field, value);
+        }
+        res.body() = body;
+        res.prepare_payload();
+        return res;
+    }
+
     template <typename Body, typename Fields>
     http::response<http::string_body> handle_request(const http::request<Body, Fields>& req) const {
         std::string target = std::string(req.target());
@@ -30,6 +54,16 @@ public:
         auto query_pos = target.find('?');
         if (query_pos != std::string::npos) {
             target = target.substr(0, query_pos);
+        }
+
+        // Check for custom handlers
+        if (auto it = handlers_.find(target); it != handlers_.end()) {
+            if constexpr (std::is_same_v<Body, http::string_body>) {
+                return it->second(req);
+            } else {
+                // If it's not string_body, we might need to create a temporary string_body request 
+                // but for now we just fall through or handle only string_body as that's what's used.
+            }
         }
 
         // Prevent directory traversal via target string directly if it contains ".."
@@ -87,6 +121,7 @@ public:
 
 private:
     fs::path base_path_;
+    std::map<std::string, Handler> handlers_;
 
     static std::string get_mime_type(const fs::path& path) {
         auto ext = path.extension().string();

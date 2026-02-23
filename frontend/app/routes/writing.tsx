@@ -2,6 +2,12 @@ import { Container, Typography, Grid, Card, CardContent, Button } from '@mui/mat
 
 const writings = [
   {
+    title: 'The Value of Voluntary Effort',
+      description: "Explores why voluntary effort for creativity, careful thinking and problem solving are still so important, even if something can do them better. Individual understanding, learning and exercise of the imagination (creativity) are the primary reason to do things.",
+    link: '/Voluntary.pdf',
+    date: 'February 2026'
+  },
+  {
     title: 'Extrinsic vs. Intrinsic Rewards',
     description: "Some thoughts about extrinsic vs. intrinsic rewards & the difference between them as a stable means to guide one's life.",
     link: '/Rewards.pdf',

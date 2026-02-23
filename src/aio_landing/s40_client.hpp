@@ -34,19 +34,37 @@ public:
     S40Client& operator=(const S40Client&) = delete;
 
     struct ZoneData {
-        double temperature = 0.0;
-        double humidity = 0.0;
+        int temperature = 0;
+        int setpoint = 0;
+        int humidity = 0;
+        bool fan = false;
+        std::string mode;
         bool valid = false;
     };
 
-    double get_temperature() {
+    int get_temperature() {
         std::lock_guard<std::mutex> lock(mutex_);
         return temperature_;
     }
 
-    double get_humidity() {
+    int get_setpoint() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return setpoint_;
+    }
+
+    int get_humidity() {
         std::lock_guard<std::mutex> lock(mutex_);
         return humidity_;
+    }
+
+    bool get_fan() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return fan_;
+    }
+
+    std::string get_mode() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return mode_;
     }
 
     bool is_data_valid() {
@@ -141,13 +159,31 @@ public:
                                                     if (z0.contains("status") && z0.at("status").is_object()) {
                                                         auto const& status = z0.at("status").as_object();
                                                         if (status.contains("temperature")) {
-                                                            result.temperature = status.at("temperature").to_number<double>();
-                                                            if (status.contains("humidity")) {
-                                                                result.humidity = status.at("humidity").to_number<double>();
-                                                            }
+                                                            result.temperature = status.at("temperature").to_number<int>();
                                                             result.valid = true;
-                                                            goto finished;
                                                         }
+                                                        if (status.contains("humidity")) {
+                                                            result.humidity = status.at("humidity").to_number<int>();
+                                                            result.valid = true;
+                                                        }
+                                                        if (status.contains("fan")) {
+                                                            result.fan = status.at("fan").as_bool();
+                                                            result.valid = true;
+                                                        }
+                                                        std::cout << status << std::endl;
+                                                        std::cout << status.contains("period") << ' ' << status.at("period").is_object() << std::endl;
+                                                        if (status.contains("period") && status.at("period").is_object()) {
+                                                            auto period_obj = status.at("period").as_object();
+                                                            if (period_obj.contains("systemMode")) {
+                                                                result.mode = period_obj.at("systemMode").as_string();
+                                                                result.valid = true;
+                                                            }
+                                                            if (period_obj.contains("sp")) {
+                                                                result.setpoint = period_obj.at("sp").to_number<int>();
+                                                                result.valid = true;
+                                                            }
+                                                        }
+                                                        if (result.valid) goto finished;
                                                     }
                                                 }
                                             }
@@ -191,7 +227,10 @@ private:
             if (data.valid) {
                 std::lock_guard<std::mutex> lock(mutex_);
                 temperature_ = data.temperature;
+                setpoint_ = data.setpoint;
                 humidity_ = data.humidity;
+                fan_ = data.fan;
+                mode_ = data.mode;
                 data_valid_ = true;
                 std::cout << "[S40] Updated: Temp=" << temperature_ << ", Hum=" << humidity_ << std::endl;
             } else {
@@ -207,7 +246,10 @@ private:
     std::string client_id_ = "simple_zone_requester_cpp";
     ssl::context ctx_;
     std::mutex mutex_;
-    double temperature_ = 0.0;
-    double humidity_ = 0.0;
+    int temperature_ = 0;
+    int setpoint_ = 0;
+    int humidity_ = 0;
+    bool fan_ = false;
+    std::string mode_;
     bool data_valid_ = false;
 };

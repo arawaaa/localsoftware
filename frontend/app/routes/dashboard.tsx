@@ -3,7 +3,10 @@ import { useState, useEffect } from 'react';
 
 export default function Dashboard() {
   const [temperature, setTemperature] = useState<string>('Loading...');
+  const [setpoint, setSetpoint] = useState<string>('Loading...');
   const [humidity, setHumidity] = useState<string>('Loading...');
+  const [mode, setMode] = useState<string>('Loading...');
+  const [fan, setFan] = useState<string>('Loading...');
 
   const fetchData = async () => {
     try {
@@ -11,9 +14,21 @@ export default function Dashboard() {
       const tempText = await tempRes.text();
       setTemperature(tempText.trim());
 
+      const setpointRes = await fetch('/setpoint');
+      const setpointText = await setpointRes.text();
+      setSetpoint(setpointText.trim());
+
       const humidityRes = await fetch('/humidity');
       const humidityText = await humidityRes.text();
       setHumidity(humidityText.trim());
+
+      const modeRes = await fetch('/mode');
+      const modeText = await modeRes.text();
+      setMode(modeText.trim());
+
+      const fanRes = await fetch('/fan');
+      const fanText = await fanRes.text();
+      setFan(fanText.trim());
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
     }
@@ -51,6 +66,18 @@ export default function Dashboard() {
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 1, borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
                   <Typography variant="body1" sx={{ fontWeight: 'medium' }}>Temperature</Typography>
                   <Typography variant="body1" color="primary" sx={{ fontWeight: 'bold' }}>{temperature}°F</Typography>
+                </Box>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 1, borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                  <Typography variant="body1" sx={{ fontWeight: 'medium' }}>Setpoint</Typography>
+                  <Typography variant="body1" color="primary" sx={{ fontWeight: 'bold' }}>{setpoint}°F</Typography>
+                </Box>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 1, borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                  <Typography variant="body1" sx={{ fontWeight: 'medium' }}>Mode</Typography>
+                  <Typography variant="body1" color="primary" sx={{ fontWeight: 'bold' }}>{mode}</Typography>
+                </Box>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 1, borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                  <Typography variant="body1" sx={{ fontWeight: 'medium' }}>Fan</Typography>
+                  <Typography variant="body1" color="primary" sx={{ fontWeight: 'bold' }}>{fan}</Typography>
                 </Box>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 1 }}>
                   <Typography variant="body1" sx={{ fontWeight: 'medium' }}>Humidity</Typography>
