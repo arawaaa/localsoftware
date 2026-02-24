@@ -17,7 +17,7 @@ public:
         IoUringManager::getInstance().cache_call(this, ID_DEFAULT, io_uring_prep_timeout, &ts_, 0, 0);
     }
 
-    void post(int id, int res) override;
+    bool on_new_data(int id, int res) override;
 
     std::string get_info() const override { return "BandwidthDataTimerEvent"; }
 

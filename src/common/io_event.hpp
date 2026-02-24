@@ -4,7 +4,17 @@
 #include <string>
 #include <memory>
 #include <utility>
+#include <map>
+#include <typeindex>
 #include "file.hpp"
+
+class IoEvent;
+
+struct IoUringData {
+    int id;
+    std::map<std::type_index, std::unique_ptr<IoEvent>> events;
+    IoEvent* outer_event;
+};
 
 /**
  * @brief Base class for all io_uring events.
@@ -18,12 +28,12 @@ public:
     // Support for events that share an FD (non-owning)
     IoEvent(int fd) : fd_(fd) {}
 
-    virtual ~IoEvent() = default;
+    virtual ~IoEvent();
 
     /**
      * @brief Handle the completion queue entry (CQE) result.
      */
-    virtual void post(int id, int res) = 0;
+    virtual bool on_new_data(int id, int res) = 0;
 
     /**
      * @brief Checks if the event was successful and returns a success flag along with a result code.
@@ -32,7 +42,11 @@ public:
 
     virtual std::string get_info() const = 0;
 
+    IoUringData uring_data_;
+
 protected:
     std::unique_ptr<File> file_;
     int fd_;
 };
+
+inline IoEvent::~IoEvent() = default;

@@ -11,11 +11,15 @@
 #include <openssl/bio.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#include <typeindex>
+#include <typeinfo>
 #include "io_event.hpp"
 #include "defs.hpp"
 
 class IoUringManager {
 public:
+    friend class IoEvent;
+
     static IoUringManager& getInstance() {
         static IoUringManager instance;
         return instance;
@@ -23,6 +27,18 @@ public:
 
     IoUringManager(const IoUringManager&) = delete;
     IoUringManager& operator=(const IoUringManager&) = delete;
+
+    template <typename T, typename... Args>
+    void initialize_dependent_event(IoEvent* parent, Args&&... args) {
+        auto ev = std::make_unique<T>(std::forward<Args>(args)...);
+        ev->uring_data_.outer_event = parent;
+        parent->uring_data_.events[std::type_index(typeid(T))] = std::move(ev);
+    }
+
+    template <typename T>
+    auto get_data(IoEvent* parent, int id) -> decltype(std::declval<T>().get_data(id)) {
+        return static_cast<T*>(parent->uring_data_.events[std::type_index(typeid(T))].get())->get_data(id);
+    }
 
     template <typename F, typename... Args>
     void cache_call(IoEvent* ev, int id, F&& func, Args&&... args) {

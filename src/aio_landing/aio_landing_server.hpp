@@ -13,23 +13,27 @@ public:
     AioLandingHTTP(std::unique_ptr<File> file, bool enable_tls, const HTTPManager& http_manager)
         : InetSocketReadWriteEventHTTP(std::move(file), enable_tls), http_manager_(http_manager) {}
 
-    void post(int id, int res) override {
+    bool on_new_data(int id, int res) override {
         if (res <= 0) {
             delete this;
-            return;
+            return true;
         }
 
         if (id == ID_READ) {
             auto req = parser_->get();
             if (req.method() == http::verb::get) {
                 write_http(http_manager_.handle_request(req));
+                return false;
             } else {
                 delete this;
+                return true;
             }
         } else if (id == ID_WRITE) {
             // Continue reading
             read_http();
+            return false;
         }
+        return true;
     }
 
     std::string get_info() const override { return "AioLandingHTTP FD " + std::to_string(fd_); }
@@ -82,7 +86,7 @@ public:
                          &client_addr_len_, 0);
     }
 
-    void post(int id, int res) override {
+    bool on_new_data(int id, int res) override {
         if (res >= 0) {
             char ip_str[INET_ADDRSTRLEN];
             inet_ntop(AF_INET, &(client_addr_.sin_addr), ip_str, INET_ADDRSTRLEN);
@@ -93,6 +97,7 @@ public:
         }
         // Re-arm immediately
         prepare_accept();
+        return false;
     }
 
     std::string get_info() const override { return "AioLandingAcceptEvent FD " + std::to_string(fd_); }

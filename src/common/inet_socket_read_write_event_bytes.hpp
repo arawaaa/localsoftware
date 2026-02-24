@@ -51,6 +51,13 @@ public:
         return {true, res};
     }
 
+    void* get_data(int id) {
+        if (id == ID_READ) {
+            return read_buffer_;
+        }
+        return nullptr;
+    }
+
 private:
     bool prepare_read(int res) {
         read_bytes_left_ -= res;

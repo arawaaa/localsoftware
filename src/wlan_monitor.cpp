@@ -173,7 +173,7 @@ void server_func() {
             auto [id, res, ev] = *non_uring;
             auto [success, result_code] = ev->abstract_event_success(id, res);
             if (success && !(id & RequestID::FLAG_INTERNAL)) {
-                ev->post(id, result_code);
+                (void)ev->on_new_data(id, result_code);
             }
         }
 
@@ -200,7 +200,7 @@ void server_func() {
                 int id = data->id;
                 auto [success, result_code] = ev->abstract_event_success(id, (*ptr)->res);
                 if (success && !(id & RequestID::FLAG_INTERNAL)) {
-                    ev->post(id, result_code);
+                    (void)ev->on_new_data(id, result_code);
                 }
                 delete data;
             }

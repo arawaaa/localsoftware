@@ -2,6 +2,12 @@ import { Container, Typography, Grid, Card, CardContent, Button } from '@mui/mat
 
 const writings = [
   {
+    title: 'On Technological Progress',
+      description: "Why does recent technological progress seem awful, despite incredible developments to the contrary? What is the nature of technological progress? How does disruption reset our outlook on the future and possibly give us renewed hope?",
+    link: '/TechProgress.pdf',
+    date: 'February 24 2026'
+  },
+  {
     title: 'The Value of Voluntary Effort',
       description: "Explores why voluntary effort for creativity, careful thinking and problem solving are still so important, even if something can do them better. Individual understanding, learning and exercise of the imagination (creativity) are the primary reason to do things.",
     link: '/Voluntary.pdf',

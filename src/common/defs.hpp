@@ -1,5 +1,8 @@
 #pragma once
 
+#include <map>
+#include <typeindex>
+
 class IoEvent;
 
 enum RequestID {

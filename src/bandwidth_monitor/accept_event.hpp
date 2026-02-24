@@ -22,11 +22,11 @@ public:
                          &client_addr_len_, 0);
     }
 
-    void post(int id, int res) override {
+    bool on_new_data(int id, int res) override {
         if (res < 0) {
             // Re-arm to keep accepting even on failure
             prepare_accept();
-            return;
+            return false;
         }
 
         // Wrap the new client socket in a File object
@@ -39,6 +39,7 @@ public:
 
         // Re-arm the accept event to listen for the next connection
         prepare_accept();
+        return false;
     }
 
     std::string get_info() const override {
