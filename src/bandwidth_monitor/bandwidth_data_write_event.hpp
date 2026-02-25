@@ -56,17 +56,18 @@ public:
         IoUringManager::getInstance().cache_call(this, ID_DEFAULT, io_uring_prep_send, fd_, data_ptr, remaining, MSG_NOSIGNAL);
     }
 
-    bool on_new_data(int id, int res) override {
+    void on_new_data(int op, EventType event) override {
+        int res = std::get<IoUringResult>(event).res;
         if (res <= 0) {
             delete this; 
-            return true; 
+            return; 
         }
 
         sent_bytes_ += res;
 
         if (sent_bytes_ < response_.length()) {
             prepare_write();
-            return false;
+            return;
         }
 
         sent_bytes_ = 0;
@@ -83,34 +84,33 @@ public:
                     file_stream_.open("/srv/monitoringindex.html");
                     prepare_next_file_chunk();
                 }
-                return false;
+                return;
 
             case STATE_SENDING_LOGS:
                 prepare_next_log_chunk();
-                return false;
+                return;
 
             case STATE_SENDING_MARKER:
                 state_ = STATE_WAITING_TIMER;
                 schedule_timer();
-                return false;
+                return;
 
             case STATE_SENDING_LIVE:
                 state_ = STATE_WAITING_TIMER;
                 schedule_timer();
-                return false;
+                return;
 
             case STATE_SENDING_FILE:
                 prepare_next_file_chunk();
-                return false;
+                return;
 
             case STATE_DONE:
                 delete this; 
-                return true; 
+                return; 
 
             default:
                 break;
         }
-        return true;
     }
 
     void trigger_live_update() {
@@ -227,7 +227,6 @@ private:
 inline BandwidthDataTimerEvent::BandwidthDataTimerEvent(BandwidthDataWriteEvent* writer)
     : IoEvent(-1), writer_(writer) {}
 
-inline bool BandwidthDataTimerEvent::on_new_data(int id, int res) {
+inline void BandwidthDataTimerEvent::on_new_data(int op, EventType event) {
     writer_->trigger_live_update();
-    return false;
 }

@@ -13,6 +13,7 @@
 #include <openssl/err.h>
 #include <typeindex>
 #include <typeinfo>
+#include <queue>
 #include "io_event.hpp"
 #include "defs.hpp"
 
@@ -50,6 +51,7 @@ public:
         uint64_t id = next_id_++;
         uint64_t old_running_id = running_id_;
         running_id_ = id;
+        
         T* ev = static_cast<T*>(parent->uring_data_.events[std::type_index(typeid(T))].get());
         CallResponse resp = (ev->*method)(id, std::forward<Args>(args)...);
         
@@ -57,24 +59,37 @@ public:
         data.status = resp.success ? CallStatus::Running : CallStatus::Failed;
         data.description = std::move(resp.description);
         data.op_hint = resp.op_hint;
+        data.parent_task_id = old_running_id;
+        data.event = ev;
+        
+        if (old_running_id != 0) {
+            call_map_[old_running_id].event = parent;
+        }
         
         running_id_ = old_running_id;
         return {id, resp.success};
+    }
+
+    void finalize_current_task(bool failed, int return_code) {
+        if (running_id_ == 0) return;
+        auto& data = call_map_[running_id_];
+        data.status = failed ? CallStatus::Failed : CallStatus::Finished;
+        data.return_code = return_code;
     }
 
     void run(struct io_uring* ring) {
         while (true) {
             // Process non-uring events
             while (auto non_uring = dequeue_non_uring_event()) {
-                auto [id, res, ev] = *non_uring;
-                if (!(id & RequestID::FLAG_INTERNAL)) {
-                    (void)ev->on_new_data(id, res);
-                }
+                auto [op, res, ev, rid] = *non_uring;
+                uint64_t old_rid = running_id_;
+                running_id_ = rid; 
+                ev->on_new_data(op, IoUringResult{res});
+                running_id_ = old_rid;
             }
 
             // Ensure pending submissions are sent
             submit_events(ring);
-            io_uring_submit(ring); 
 
             struct io_uring_cqe *cqe[16] = {nullptr};
             struct __kernel_timespec ts ={
@@ -94,12 +109,18 @@ public:
                     IoEvent* ev = data->event;
                     int op = data->op;
                     uint64_t rid = data->running_id;
-                    if (!(op & RequestID::FLAG_INTERNAL)) {
-                        uint64_t old_rid = running_id_;
-                        running_id_ = rid;
-                        (void)ev->on_new_data(op, (*ptr)->res);
-                        running_id_ = old_rid;
+                    
+                    uint64_t old_rid = running_id_;
+                    running_id_ = rid;
+                    ev->on_new_data(op, IoUringResult{(*ptr)->res});
+                    
+                    if (rid != 0 && (call_map_[rid].status == CallStatus::Finished || call_map_[rid].status == CallStatus::Failed)) {
+                        propagation_queue_.push(rid);
                     }
+                    
+                    process_propagation_queue();
+                    running_id_ = old_rid;
+                    
                     delete data;
                 }
                 i++;
@@ -116,12 +137,12 @@ public:
         });
     }
 
-    void add(int id, int res, IoEvent* ev) {
+    void add(int op, int res, IoEvent* ev) {
         std::lock_guard<std::mutex> lock(non_uring_mutex_);
-        non_uring_events_.emplace_back(id | RequestID::FLAG_REDO_CACHED_DATA, res, ev);
+        non_uring_events_.emplace_back(op | RequestID::FLAG_REDO_CACHED_DATA, res, ev, running_id_);
     }
 
-    std::optional<std::tuple<int, int, IoEvent*>> dequeue_non_uring_event() {
+    std::optional<std::tuple<int, int, IoEvent*, uint64_t>> dequeue_non_uring_event() {
         std::lock_guard<std::mutex> lock(non_uring_mutex_);
         if (non_uring_events_.empty()) {
             return std::nullopt;
@@ -132,6 +153,7 @@ public:
     }
 
     void submit_events(struct io_uring* ring) {
+        if (pending_events_.empty()) return;
         for (auto& item : pending_events_) {
             IoEvent* ev = std::get<0>(item);
             int op = std::get<1>(item);
@@ -146,6 +168,7 @@ public:
             }
         }
         pending_events_.clear();
+        io_uring_submit(ring);
     }
 
     SSL_CTX* get_tls_ctx() {
@@ -153,6 +176,34 @@ public:
     }
 
 private:
+    void process_propagation_queue() {
+        while (!propagation_queue_.empty()) {
+            uint64_t finished_id = propagation_queue_.front();
+            propagation_queue_.pop();
+            
+            auto it = call_map_.find(finished_id);
+            if (it == call_map_.end()) continue;
+            
+            uint64_t parent_id = it->second.parent_task_id;
+            if (parent_id == 0) continue;
+            
+            auto& parent_entry = call_map_[parent_id];
+            if (parent_entry.event) {
+                uint64_t old_rid = running_id_;
+                running_id_ = parent_id;
+                
+                ChildTaskCompletion comp = {finished_id, it->second.status, it->second.return_code};
+                parent_entry.event->on_new_data(ID_DEFAULT, comp);
+                
+                if (parent_entry.status == CallStatus::Finished || parent_entry.status == CallStatus::Failed) {
+                    propagation_queue_.push(parent_id);
+                }
+                
+                running_id_ = old_rid;
+            }
+        }
+    }
+
     IoUringManager() {
         tls_ctx_ = SSL_CTX_new(TLS_server_method());
         if (tls_ctx_ == NULL) {
@@ -189,8 +240,9 @@ private:
     SSL_CTX* tls_ctx_;
     std::vector<std::tuple<IoEvent*, int, uint64_t, std::function<void(struct io_uring_sqe*)>>> pending_events_;
     std::mutex non_uring_mutex_;
-    std::deque<std::tuple<int, int, IoEvent*>> non_uring_events_;
+    std::deque<std::tuple<int, int, IoEvent*, uint64_t>> non_uring_events_;
     uint64_t next_id_ = 1;
     uint64_t running_id_ = 0;
     std::map<uint64_t, CallData> call_map_;
+    std::queue<uint64_t> propagation_queue_;
 };

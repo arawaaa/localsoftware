@@ -26,11 +26,12 @@ public:
         IoUringManager::getInstance().cache_call(this, ID_DEFAULT, io_uring_prep_recv, fd_, buffer_.data(), buffer_.size(), 0);
     }
 
-    bool on_new_data(int id, int res) override {
+    void on_new_data(int op, EventType event) override {
+        int res = std::get<IoUringResult>(event).res;
         std::cout << res << std::endl;
         if (res <= 0) {
             delete this;
-            return true;
+            return;
         }
         
         accumulated_.append(reinterpret_cast<char*>(buffer_.data()), res);
@@ -38,10 +39,10 @@ public:
         if (accumulated_.find("\r\n\r\n") == std::string::npos) {
             if (accumulated_.length() > 8192) {
                 delete this;
-                return true;
+                return;
             }
             prepare_read();
-            return false;
+            return;
         }
 
         std::string lower = accumulated_;
@@ -51,15 +52,15 @@ public:
             handle_websocket_upgrade(accumulated_);
             // ownership of file_ was moved inside handle_websocket_upgrade
             delete this;
-            return false;
+            return;
         } else if (lower.find("get / ") != std::string::npos || lower.find("get /http") != std::string::npos) {
             handle_http_get();
             // ownership was moved
             delete this;
-            return false;
+            return;
         } else {
             delete this;
-            return true;
+            return;
         }
     }
 

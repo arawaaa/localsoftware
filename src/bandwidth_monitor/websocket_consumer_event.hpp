@@ -17,14 +17,14 @@ public:
         IoUringManager::getInstance().cache_call(this, ID_DEFAULT, io_uring_prep_recv, fd_, buffer_.data(), buffer_.size(), 0);
     }
 
-    bool on_new_data(int id, int res) override {
+    void on_new_data(int op, EventType event) override {
+        int res = std::get<IoUringResult>(event).res;
         if (res <= 0) {
             delete this;
-            return true;
+            return;
         }
         // Consume and discard client data (Pings, etc.)
         prepare_consumer();
-        return false;
     }
 
     std::string get_info() const override { return "WS Consumer FD " + std::to_string(fd_); }

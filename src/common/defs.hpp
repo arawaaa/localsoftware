@@ -6,6 +6,7 @@
 
 #include <set>
 #include <cstdint>
+#include <variant>
 
 class IoEvent;
 
@@ -13,11 +14,26 @@ enum RequestID {
     ID_DEFAULT = 0x1,
     ID_READ = 0x2,
     ID_WRITE = 0x4,
-    FLAG_INTERNAL = 0x8,
     FLAG_REDO_CACHED_DATA = 0x10
 };
 
 enum class CallStatus { Failed, Running, Finished, Stopped };
+
+struct IoUringResult {
+    int res;
+};
+
+struct Wakeup {
+    uint64_t task_id;
+};
+
+struct ChildTaskCompletion {
+    uint64_t task_id;
+    CallStatus status;
+    int return_code;
+};
+
+using EventType = std::variant<IoUringResult, Wakeup, ChildTaskCompletion>;
 
 enum OpHint {
     OP_HINT_NONE = 0,
@@ -42,6 +58,9 @@ struct CallData {
     CallStatus status;
     std::string description;
     uint32_t op_hint;
+    uint64_t parent_task_id;
+    int return_code;
+    IoEvent* event;
 };
 
 struct EventData {

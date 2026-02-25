@@ -35,27 +35,24 @@ public:
         IoUringManager::getInstance().cache_call(this, ID_WRITE, io_uring_prep_send, fd_, write_buffer_, write_bytes_left_, MSG_NOSIGNAL);
     }
 
-    std::pair<bool, int> abstract_event_success(int id, int res) override {
-        if (res <= 0) {
-            return {false, res};
-        }
-        
-        if (id == ID_READ) {
-            bool done = prepare_read(res);
-            return {done, static_cast<int>(read_total_processed_)};
-        } else if (id == ID_WRITE) {
-            bool done = prepare_write(res);
-            return {done, static_cast<int>(write_total_processed_)};
-        }
-        
-        return {true, res};
-    }
-
     std::pair<GetDataInfo, void*> get_data(int id) {
         if (id == ID_READ) {
             return {{true}, read_buffer_};
         }
         return {{false}, nullptr};
+    }
+
+    void on_new_data(int op, EventType event) override {
+        int res = std::get<IoUringResult>(event).res;
+        if (res <= 0) {
+            return;
+        }
+        
+        if (op == ID_READ) {
+            prepare_read(res);
+        } else if (op == ID_WRITE) {
+            prepare_write(res);
+        }
     }
 
 private:

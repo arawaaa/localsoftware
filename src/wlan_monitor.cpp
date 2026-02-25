@@ -164,7 +164,6 @@ void server_func() {
     https_accept_ev->prepare_accept();
 
     IoUringManager::getInstance().submit_events(&ring);
-    io_uring_submit(&ring);
 
     IoUringManager::getInstance().run(&ring);
 

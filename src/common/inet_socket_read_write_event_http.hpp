@@ -88,25 +88,28 @@ public:
         }
     }
 
-    std::pair<bool, int> abstract_event_success(int id, int res) override {
-        // The Redo cached data flag lets us create events with res = 0
-        if (res <= 0 && !((id & RequestID::FLAG_REDO_CACHED_DATA) && res == 0)) return {true, -1}; // Error
+    /**
+     * @brief Handle the completion queue entry (CQE) result.
+     */
+    void on_new_data(int op, EventType event) override {
+        int res = std::get<IoUringResult>(event).res;
         
-        if (id & ID_READ) {
+        // The Redo cached data flag lets us create events with res = 0
+        if (res <= 0 && !((op & RequestID::FLAG_REDO_CACHED_DATA) && res == 0)) return; // Error
+
+        if (op & ID_READ) {
             if (tls_enabled_) {
-                return handle_read_tls(id, res);
+                handle_read_tls(op, res);
             } else {
-                return handle_read(id, res);
+                handle_read(op, res);
             }
-        } else if (id & ID_WRITE) {
+        } else if (op & ID_WRITE) {
             if (tls_enabled_) {
-                return handle_write_tls(id, res);
+                handle_write_tls(op, res);
             } else {
-                return handle_write(id, res);
+                handle_write(op, res);
             }
         }
-        // Invalid request
-        return {true, -1};
     }
 
 protected:
@@ -130,26 +133,26 @@ protected:
     TLSState state_;
     std::function<int(size_t*)> read_func_cached_, write_func_cached_;
 
-    std::pair<bool, int> handle_read_tls(int id, int res) {
+    bool handle_read_tls(int id, int res) {
         BIO_write(readbuf_, encryptread_, res);
         if (state_ == TLSState::WaitHello) {
             int ec = SSL_accept(ssl_);
             if (SSL_get_error(ssl_, ec) == SSL_ERROR_WANT_READ) {
                 BIO_read_ex(writebuf_, encryptwrite_, 4096, &write_length_);
                 if (write_length_) {
-                    arm_write(id, true);
+                    arm_write(id);
                 } else {
                     arm_read(id);
                 }
-                return {false, res};
-            } else if (SSL_get_error(ssl_, ec) != SSL_ERROR_NONE) { // SSL_ERROR_WANT_WRITE shouldn't happen
+                return false;
+            } else if (SSL_get_error(ssl_, ec) != SSL_ERROR_NONE) {
                 ERR_print_errors_fp(stderr);
-                return {true, -1};
+                return true;
             } else {
                 state_ = TLSState::Full;
             }
         }
-        if (state_ == TLSState::Full) { // TLSState::Full
+        if (state_ == TLSState::Full) {
             bool read_any = false;
             while (BIO_ctrl_pending(readbuf_)) {
                 size_t readbytes = 0;
@@ -170,78 +173,64 @@ protected:
                         if (BIO_ctrl_pending(writebuf_)) {
                             BIO_read_ex(writebuf_, encryptwrite_, 4096, &write_length_);
                             read_active_ = false;
-                            arm_write(id, true);
+                            arm_write(id);
                         } else {
-                            arm_read(id, id & RequestID::FLAG_INTERNAL);
+                            arm_read(id);
                         }
-                        goto ret_retry; // shouldn't have actually written anything to buffer_
+                        return false;
                     case SSL_ERROR_WANT_WRITE:
-                        if (!read_any && id & RequestID::FLAG_INTERNAL) {
-                            // A write op returned with SSL_ERROR_WANT_READ, and now we have SSL_ERROR_WANT_WRITE. Throw
-                            throw std::runtime_error{"Libssl library error. Received WANT_WRITE & WANT_READ, unable to advance."};
-                        }
                         read_retry_ = true;
                         read_active_ = false;
-                        if (!(id & RequestID::FLAG_INTERNAL)) {
-                            arm_write(id, true);
-                            goto ret_retry;
-                        } else {
-                            // Non-kernel request to determine if we have read enough. If we haven't, this will restart the read
-                            IoUringManager::getInstance().add(RequestID::ID_WRITE, 0, this);
-                            goto ret_retry;
-                        }
+                        arm_write(id);
+                        return false;
                     case SSL_ERROR_NONE:
                         read_any = true;
                         break;
                     default:
-                        return {true, -1};
+                        return true;
                 }
                 buffer_.commit(readbytes);
             }
 
-            // Don't parse requests on internal-only requests, and only parse when the consumer asks for it
-            if (!(id & RequestID::FLAG_INTERNAL) && try_parse()) {
-                return {true, 1};
-            } else if (!(id & RequestID::FLAG_INTERNAL))
+            if (try_parse()) {
+                return true;
+            } else {
                 arm_read(id);
-            else {
-                read_active_ = false;
-                IoUringManager::getInstance().add(RequestID::ID_WRITE, 0, this);
+                return false;
             }
         }
 
-ret_retry:
-        return {false, res};
+        return false;
     }
 
-    std::pair<bool, int> handle_read(int id, int res) {
+    bool handle_read(int id, int res) {
         if (res > 0) {
             buffer_.commit(res);
         }
 
         bool done = try_parse();
         if (done) {
-            return {true, res};
+            return true;
         }
 
         arm_read(id);
-        return {false, res};
+        return false;
     }
 
-    std::pair<bool, int> handle_write_tls(int id, int res) {
-        if (res < 0) return {true, -1};
+    bool handle_write_tls(int id, int res) {
+        if (res < 0) return true;
 
-        int max_write_length = 4096, offset = 0;
+        int offset = 0;
         if (res < write_length_) {
             memmove(encryptwrite_, encryptwrite_ + res, write_length_ - res);
-            max_write_length = 4096 - (write_length_ - res);
+            offset = write_length_ - res;
         }
-        write_length_ = offset = write_length_ - res;
+        write_length_ = write_length_ - res;
 
         if (state_ == TLSState::WaitHello) {
             write_active_ = false;
             IoUringManager::getInstance().add(RequestID::ID_READ, 0, this);
-            return {false, res};
+            return false;
         }
 
         size_t numread;
@@ -249,81 +238,72 @@ ret_retry:
 
         switch (SSL_get_error(ssl_, ret)) {
             case SSL_ERROR_WANT_READ:
-                if (id & RequestID::FLAG_INTERNAL)
-                    throw std::runtime_error{"WANT_WRITE followed by WANT_READ"};
-                // Make sure our entire write BIO is sent out to make sure the read "works"
                 write_retry_ = true;
                 if (BIO_ctrl_pending(writebuf_) || write_length_) {
                     BIO_read(writebuf_, encryptwrite_ + offset, 4096 - write_length_);
                     arm_write(id);
                 } else {
-                    // Nothing else to write out, start read
                     write_active_ = false;
-                    arm_read(id, true);
+                    arm_read(id);
                 }
-                return {false, res};
+                return false;
             case SSL_ERROR_WANT_WRITE:
                 write_retry_ = true;
-                arm_write(id, id & RequestID::FLAG_INTERNAL);
-                return {false, res};
+                arm_write(id);
+                return false;
             case SSL_ERROR_NONE:
                 write_retry_ = false;
                 write_buffer_.consume(numread);
-                if (id & RequestID::FLAG_INTERNAL) {
-                    write_active_ = false;
-                    IoUringManager::getInstance().add(RequestID::ID_READ, 0, this);
-                    return {false, res};
-                }
 
                 if (BIO_ctrl_pending(writebuf_) || write_buffer_.size()) {
                     int ret = BIO_read(writebuf_, encryptwrite_ + offset, 4096 - write_length_);
                     write_length_ += ret;
                     arm_write(id);
-                    return {false, res};
+                    return false;
                 } else {
-                    return {true, 1};
+                    return true;
                 }
             default:
-                return {true, -1};
+                return true;
         }
     }
 
-    std::pair<bool, int> handle_write(int id, int res) {
+    bool handle_write(int id, int res) {
         if (res > 0) {
             write_buffer_.consume(res);
         }
 
         if (write_buffer_.size() > 0) {
             arm_write(id);
-            return {false, res};
+            return false;
         }
-        return {true, res};
+        return true;
     }
 
-    void arm_read(int id, bool internal = false) {
+    void arm_read(int id) {
         if (read_active_ && !(id & RequestID::ID_READ)) return;
         read_active_ = true;
         if (tls_enabled_) {
-            IoUringManager::getInstance().cache_call(this, ID_READ | (internal ? FLAG_INTERNAL : 0), io_uring_prep_recv, fd_,
+            IoUringManager::getInstance().cache_call(this, ID_READ, io_uring_prep_recv, fd_,
                                                     encryptread_, 4096, 0);
         } else {
             // Prepare space in the flat_buffer for the next read
             auto mutable_buffer = buffer_.prepare(4096);
-            IoUringManager::getInstance().cache_call(this, ID_READ | (internal ? FLAG_INTERNAL : 0), io_uring_prep_read, fd_,
+            IoUringManager::getInstance().cache_call(this, ID_READ, io_uring_prep_read, fd_,
                                                     mutable_buffer.data(), mutable_buffer.size(), 0);
         }
     }
 
-    void arm_write(int id, bool internal = false) {
+    void arm_write(int id) {
         if (write_active_ && !(id & RequestID::ID_WRITE)) return;
         write_active_ = true;
 
         if (tls_enabled_) {
-            IoUringManager::getInstance().cache_call(this, ID_WRITE | (internal ? FLAG_INTERNAL : 0), io_uring_prep_send, fd_, encryptwrite_,
+            IoUringManager::getInstance().cache_call(this, ID_WRITE, io_uring_prep_send, fd_, encryptwrite_,
                                                      write_length_, MSG_NOSIGNAL);
         } else {
             if (write_buffer_.size() > 0) {
-                IoUringManager::getInstance().cache_call(this, ID_WRITE | (internal ? FLAG_INTERNAL : 0), io_uring_prep_send, fd_,
+                IoUringManager::getInstance().cache_call(this, ID_WRITE, io_uring_prep_send, fd_,
                                                         write_buffer_.data().data(), write_buffer_.size(), MSG_NOSIGNAL);
             }
         }

@@ -22,11 +22,12 @@ public:
                          &client_addr_len_, 0);
     }
 
-    bool on_new_data(int id, int res) override {
+    void on_new_data(int op, EventType event) override {
+        int res = std::get<IoUringResult>(event).res;
         if (res < 0) {
             // Re-arm to keep accepting even on failure
             prepare_accept();
-            return false;
+            return;
         }
 
         // Wrap the new client socket in a File object
@@ -39,7 +40,6 @@ public:
 
         // Re-arm the accept event to listen for the next connection
         prepare_accept();
-        return false;
     }
 
     std::string get_info() const override {

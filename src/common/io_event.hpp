@@ -7,6 +7,7 @@
 #include <map>
 #include <typeindex>
 #include "file.hpp"
+#include "defs.hpp"
 
 class IoEvent;
 
@@ -33,12 +34,7 @@ public:
     /**
      * @brief Handle the completion queue entry (CQE) result.
      */
-    virtual bool on_new_data(int id, int res) = 0;
-
-    /**
-     * @brief Checks if the event was successful and returns a success flag along with a result code.
-     */
-    virtual std::pair<bool, int> abstract_event_success(int id, int res) { return {true, res}; }
+    virtual void on_new_data(int op, EventType event) = 0;
 
     virtual std::string get_info() const = 0;
 
