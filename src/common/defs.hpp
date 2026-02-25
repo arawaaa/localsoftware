@@ -1,7 +1,11 @@
 #pragma once
 
+#include <string>
 #include <map>
 #include <typeindex>
+
+#include <set>
+#include <cstdint>
 
 class IoEvent;
 
@@ -13,7 +17,39 @@ enum RequestID {
     FLAG_REDO_CACHED_DATA = 0x10
 };
 
+enum class CallStatus { Failed, Running, Finished, Stopped };
+
+enum OpHint {
+    OP_HINT_NONE = 0,
+    OP_HINT_FILESYSTEM = 1 << 0,
+    OP_HINT_NETWORK = 1 << 1,
+    OP_HINT_SERIAL = 1 << 2,
+    OP_HINT_I2C = 1 << 3,
+    OP_HINT_READ = 1 << 4,
+    OP_HINT_WRITE = 1 << 5,
+    OP_HINT_COMPUTE = 1 << 6,
+    OP_HINT_WAIT = 1 << 7
+};
+
+struct CallResponse {
+    std::string description;
+    bool success;
+    uint32_t op_hint;
+};
+
+struct CallData {
+    std::set<uint64_t> other_ids;
+    CallStatus status;
+    std::string description;
+    uint32_t op_hint;
+};
+
 struct EventData {
-    int id;
+    int op;
+    uint64_t running_id;
     IoEvent* event;
+};
+
+struct GetDataInfo {
+    bool valid;
 };

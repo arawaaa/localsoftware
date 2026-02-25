@@ -166,49 +166,7 @@ void server_func() {
     IoUringManager::getInstance().submit_events(&ring);
     io_uring_submit(&ring);
 
-    while (true) {
-        // TODO Make this actually useful, instead of a function call wrapper. Integrate with coroutines
-        // Process non-uring events
-        while (auto non_uring = IoUringManager::getInstance().dequeue_non_uring_event()) {
-            auto [id, res, ev] = *non_uring;
-            auto [success, result_code] = ev->abstract_event_success(id, res);
-            if (success && !(id & RequestID::FLAG_INTERNAL)) {
-                (void)ev->on_new_data(id, result_code);
-            }
-        }
-
-        // Ensure pending submissions (like from post()) are sent
-        IoUringManager::getInstance().submit_events(&ring);
-        io_uring_submit(&ring); 
-
-        struct io_uring_cqe *cqe[16] = {nullptr};
-        struct __kernel_timespec ts ={
-            .tv_sec = 10,
-            .tv_nsec = 0
-        };
-        // Wait for completions
-        if (io_uring_wait_cqes_min_timeout(&ring, cqe, 16, &ts, 200, nullptr) < 0) {
-            perror("io_uring_wait_cqes");
-            continue;
-        }
-
-        int i = 0;
-        for (auto ptr = cqe; *ptr; ptr++) {
-            EventData* data = reinterpret_cast<EventData*>(io_uring_cqe_get_data(*ptr));
-            if (data) {
-                IoEvent* ev = data->event;
-                int id = data->id;
-                auto [success, result_code] = ev->abstract_event_success(id, (*ptr)->res);
-                if (success && !(id & RequestID::FLAG_INTERNAL)) {
-                    (void)ev->on_new_data(id, result_code);
-                }
-                delete data;
-            }
-            i++;
-        }
-
-        io_uring_cq_advance(&ring, i);
-    }
+    IoUringManager::getInstance().run(&ring);
 
     io_uring_queue_exit(&ring);
 }
