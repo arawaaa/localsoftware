@@ -7,28 +7,17 @@
 
 class InetSocketReadWriteEventBytes : public IoEvent {
 public:
-    InetSocketReadWriteEventBytes(std::unique_ptr<File> file, 
-                             void* read_buf, size_t read_len,
-                             void* write_buf, size_t write_len) 
-        : IoEvent(std::move(file)), 
-          read_buffer_(read_buf), read_bytes_left_(read_len), read_total_processed_(0),
-          write_buffer_(write_buf), write_bytes_left_(write_len), write_total_processed_(0) {}
+    InetSocketReadWriteEventBytes(std::unique_ptr<File> file)
+        : IoEvent(std::move(file)) {}
 
-    InetSocketReadWriteEventBytes(int fd, 
-                             void* read_buf, size_t read_len,
-                             void* write_buf, size_t write_len) 
-        : IoEvent(fd), 
-          read_buffer_(read_buf), read_bytes_left_(read_len), read_total_processed_(0),
-          write_buffer_(write_buf), write_bytes_left_(write_len), write_total_processed_(0) {}
-
-    void read_all(void* buf, size_t len) {
+    void read(void* buf, size_t len) {
         read_buffer_ = buf;
         read_bytes_left_ = len;
         read_total_processed_ = 0;
         IoUringManager::getInstance().cache_call(this, ID_READ, io_uring_prep_recv, fd_, read_buffer_, read_bytes_left_, 0);
     }
 
-    void write_all(void* buf, size_t len) {
+    void write(void* buf, size_t len) {
         write_buffer_ = buf;
         write_bytes_left_ = len;
         write_total_processed_ = 0;
@@ -53,6 +42,10 @@ public:
         } else if (op == ID_WRITE) {
             prepare_write(res);
         }
+    }
+
+    std::string get_info() const override {
+        return "inet socket readwriter FD " + std::to_string(file_->get());
     }
 
 private:

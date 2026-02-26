@@ -93,9 +93,6 @@ public:
      */
     void on_new_data(int op, EventType event) override {
         int res = std::get<IoUringResult>(event).res;
-        
-        // The Redo cached data flag lets us create events with res = 0
-        if (res <= 0 && !((op & RequestID::FLAG_REDO_CACHED_DATA) && res == 0)) return; // Error
 
         if (op & ID_READ) {
             if (tls_enabled_) {
