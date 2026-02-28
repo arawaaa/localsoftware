@@ -11,16 +11,17 @@
 #include <boost/beast/http.hpp>
 
 namespace http = boost::beast::http;
+using namespace std;
 namespace fs = std::filesystem;
 
 class HTTPManager {
 public:
-    using Handler = std::function<http::response<http::string_body>(const http::request<http::string_body>&)>;
+    using Handler = function<http::response<http::string_body>(const http::request<http::string_body>&)>;
 
-    explicit HTTPManager(const std::string& base_dir) {
+    explicit HTTPManager(const string& base_dir) {
         try {
             base_path_ = fs::canonical(base_dir);
-        } catch (const std::exception& e) {
+        } catch (const exception& e) {
             // If the base directory doesn't exist or is invalid, 
             // we'll store the absolute path and hope for the best, 
             // or let future operations fail.
@@ -28,14 +29,14 @@ public:
         }
     }
 
-    void add_endpoint(std::string endpoint, Handler handler) {
+    void add_endpoint(string endpoint, Handler handler) {
         handlers_[std::move(endpoint)] = std::move(handler);
     }
 
     static http::response<http::string_body> prepare_response(
-        const std::vector<std::pair<http::field, std::string>>& headers,
+        const vector<pair<http::field, string>>& headers,
         http::status status,
-        const std::string& body,
+        const string& body,
         unsigned version = 11) {
         http::response<http::string_body> res{status, version};
         for (const auto& [field, value] : headers) {
@@ -48,17 +49,17 @@ public:
 
     template <typename Body, typename Fields>
     http::response<http::string_body> handle_request(const http::request<Body, Fields>& req) const {
-        std::string target = std::string(req.target());
+        string target = string(req.target());
         
         // Remove query parameters if present
         auto query_pos = target.find('?');
-        if (query_pos != std::string::npos) {
+        if (query_pos != string::npos) {
             target = target.substr(0, query_pos);
         }
 
         // Check for custom handlers
         if (auto it = handlers_.find(target); it != handlers_.end()) {
-            if constexpr (std::is_same_v<Body, http::string_body>) {
+            if constexpr (is_same_v<Body, http::string_body>) {
                 return it->second(req);
             } else {
                 // If it's not string_body, we might need to create a temporary string_body request 
@@ -93,9 +94,9 @@ public:
             if (canonical_str.size() >= base_str.size() &&
                 canonical_str.compare(0, base_str.size(), base_str) == 0) {
                 
-                std::ifstream ifs(canonical_path, std::ios::binary);
+                ifstream ifs(canonical_path, ios::binary);
                 if (ifs) {
-                    std::string content;
+                    string content;
                     content.resize(fs::file_size(canonical_path));
                     ifs.read(&content[0], content.size());
                     
@@ -121,9 +122,9 @@ public:
 
 private:
     fs::path base_path_;
-    std::map<std::string, Handler> handlers_;
+    map<string, Handler> handlers_;
 
-    static std::string get_mime_type(const fs::path& path) {
+    static string get_mime_type(const fs::path& path) {
         auto ext = path.extension().string();
         if (ext == ".html" || ext == ".htm") return "text/html";
         if (ext == ".css") return "text/css";
@@ -142,7 +143,7 @@ private:
     static http::response<http::string_body> error_response(
         const http::request<Body, Fields>& req, 
         http::status status, 
-        const std::string& message) {
+        const string& message) {
         http::response<http::string_body> res{status, req.version()};
         res.set(http::field::content_type, "text/plain");
         res.set(http::field::connection, "close");

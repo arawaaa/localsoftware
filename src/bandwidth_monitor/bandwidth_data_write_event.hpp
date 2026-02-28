@@ -6,10 +6,7 @@
 #include <string>
 #include <cstring>
 #include <fstream>
-#include <vector>
 #include <mutex>
-#include <iostream>
-#include <iomanip>
 #include <unistd.h>
 
 extern const std::string LOG_FILE;
@@ -36,8 +33,8 @@ public:
         STATE_DONE
     };
 
-    BandwidthDataWriteEvent(std::unique_ptr<File> client_file, std::string initial_response, bool is_websocket) 
-        : IoEvent(std::move(client_file)), 
+    BandwidthDataWriteEvent(std::shared_ptr<File> client_file, std::string initial_response, bool is_websocket)
+        : IoEvent(client_file),
           response_(std::move(initial_response)), 
           sent_bytes_(0),
           is_websocket_(is_websocket),
@@ -53,10 +50,10 @@ public:
     void prepare_write() {
         const char* data_ptr = response_.c_str() + sent_bytes_;
         size_t remaining = response_.length() - sent_bytes_;
-        IoUringManager::getInstance().cache_call(this, ID_DEFAULT, io_uring_prep_send, fd_, data_ptr, remaining, MSG_NOSIGNAL);
+        IoUringManager::getInstance().cache_call(this, ID_DEFAULT, io_uring_prep_send, file_->get(), data_ptr, remaining, MSG_NOSIGNAL);
     }
 
-    void on_new_data(int op, EventType event) override {
+    void on_new_data(int, EventType event) override {
         int res = std::get<IoUringResult>(event).res;
         if (res <= 0) {
             delete this; 
@@ -121,7 +118,7 @@ public:
         }
     }
 
-    std::string get_info() const override { return "BandwidthDataWriteEvent on FD " + std::to_string(fd_); }
+    std::string get_info() const override { return "BandwidthDataWriteEvent on FD " + std::to_string(file_->get()); }
 
 private:
     std::string response_;
@@ -225,8 +222,8 @@ private:
 };
 
 inline BandwidthDataTimerEvent::BandwidthDataTimerEvent(BandwidthDataWriteEvent* writer)
-    : IoEvent(-1), writer_(writer) {}
+    : IoEvent(), writer_(writer) {}
 
-inline void BandwidthDataTimerEvent::on_new_data(int op, EventType event) {
+inline void BandwidthDataTimerEvent::on_new_data(int, EventType) {
     writer_->trigger_live_update();
 }

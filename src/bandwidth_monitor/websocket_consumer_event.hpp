@@ -8,16 +8,16 @@
 class WebSocketConsumerEvent : public IoEvent {
 public:
     // Non-owning constructor: uses the FD without wrapping it in a File object
-    WebSocketConsumerEvent(int client_fd) 
-        : IoEvent(client_fd) {
+    WebSocketConsumerEvent(std::shared_ptr<File> file)
+        : IoEvent(file) {
         buffer_.resize(1024);
     }
 
     void prepare_consumer() {
-        IoUringManager::getInstance().cache_call(this, ID_DEFAULT, io_uring_prep_recv, fd_, buffer_.data(), buffer_.size(), 0);
+        IoUringManager::getInstance().cache_call(this, ID_DEFAULT, io_uring_prep_recv, file_->get(), buffer_.data(), buffer_.size(), 0);
     }
 
-    void on_new_data(int op, EventType event) override {
+    void on_new_data(int, EventType event) override {
         int res = std::get<IoUringResult>(event).res;
         if (res <= 0) {
             delete this;
@@ -27,7 +27,7 @@ public:
         prepare_consumer();
     }
 
-    std::string get_info() const override { return "WS Consumer FD " + std::to_string(fd_); }
+    std::string get_info() const override { return "WS Consumer FD " + std::to_string(file_->get()); }
 
 private:
     std::vector<unsigned char> buffer_;

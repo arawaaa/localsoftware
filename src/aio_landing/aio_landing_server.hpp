@@ -3,22 +3,24 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+
 #include "common/defs.hpp"
 #include "common/io_uring_manager.hpp"
-
 #include "../common/inet_socket_read_write_event_http.hpp"
 #include "../common/http_manager.hpp"
 
+using namespace std;
+
 class AioLandingHTTP : public IoEvent {
 public:
-    AioLandingHTTP(std::unique_ptr<File> file, bool enable_tls, const HTTPManager& http_manager)
-        : IoEvent(file->get()), http_manager_(http_manager)
+    AioLandingHTTP(shared_ptr<File> file, bool enable_tls, const HTTPManager& http_manager)
+        : IoEvent(file), http_manager_(http_manager)
     {
         IoUringManager::getInstance().initialize_dependent_event<InetSocketReadWriteEventHTTP>(this, std::move(file), enable_tls);
     }
 
-    CallResponse start(uint64_t taskid) {
-        auto [subtask, success] = IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventHTTP>(
+    CallResponse start(uint64_t) {
+        IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventHTTP>(
             this,
             0,
             &InetSocketReadWriteEventHTTP::read_http
@@ -27,19 +29,19 @@ public:
         return {"Server start up HTTP", true, OP_HINT_NETWORK};
     }
 
-    void on_new_data(int op, EventType event) override {
-        auto res = std::get<ChildTaskCompletion>(event);
+    void on_new_data(int, EventType event) override {
+        auto res = get<ChildTaskCompletion>(event);
         if (res.return_code <= 0) {
+            IoUringManager::getInstance().consume_event(res.task_id);
             delete this;
             return;
         }
-        IoUringManager::getInstance().consume_event(res.task_id);
 
         if (op_read_) {
             auto req = IoUringManager::getInstance().get_data<InetSocketReadWriteEventHTTP>(this, 0, res.task_id).value()->get();
 
             if (req.method() == http::verb::get) {
-                auto [taskid, success] = IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventHTTP>(
+                IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventHTTP>(
                     this,
                     0,
                     &InetSocketReadWriteEventHTTP::write_http,
@@ -51,16 +53,17 @@ public:
             }
         } else {
             // Continue reading
-            auto [taskid, success] = IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventHTTP>(
+            IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventHTTP>(
                 this,
                 0,
                 &InetSocketReadWriteEventHTTP::read_http
             );
             op_read_ = true;
         }
+        IoUringManager::getInstance().consume_event(res.task_id);
     }
 
-    std::string get_info() const override { return "AioLandingHTTP FD " + std::to_string(fd_); }
+    string get_info() const override { return "AioLandingHTTP FD " + to_string(file_->get()); }
 
 private:
     bool op_read_;

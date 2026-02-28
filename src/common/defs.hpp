@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <variant>
 
+using namespace std;
+
 class IoEvent;
 
 enum RequestID {
@@ -30,7 +32,7 @@ struct ChildTaskCompletion {
     int return_code;
 };
 
-using EventType = std::variant<IoUringResult, Wakeup, ChildTaskCompletion>;
+using EventType = variant<IoUringResult, Wakeup, ChildTaskCompletion>;
 
 enum OpHint {
     OP_HINT_NONE = 0,
@@ -45,15 +47,15 @@ enum OpHint {
 };
 
 struct CallResponse {
-    std::string description;
+    string description;
     bool success;
     uint32_t op_hint;
 };
 
 struct CallData {
-    std::set<uint64_t> other_ids;
+    set<uint64_t> other_ids;
     CallStatus status;
-    std::string description;
+    string description;
     uint32_t op_hint;
     uint64_t parent_task_id;
     int return_code;

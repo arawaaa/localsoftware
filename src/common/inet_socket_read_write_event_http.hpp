@@ -13,6 +13,7 @@
 #include "inet_socket_tls_event.hpp"
 #include "defs.hpp"
 
+using namespace std;
 namespace http = boost::beast::http;
 
 /**
@@ -20,13 +21,13 @@ namespace http = boost::beast::http;
  */
 class InetSocketReadWriteEventHTTP : public IoEvent {
 public:
-    InetSocketReadWriteEventHTTP(std::unique_ptr<File> file, bool use_ssl = false)
-        : IoEvent(file->get()), tls_enabled_(use_ssl)
+    InetSocketReadWriteEventHTTP(shared_ptr<File> file, bool use_ssl = false)
+        : IoEvent(file), tls_enabled_(use_ssl)
     {
         if (tls_enabled_)
-            IoUringManager::getInstance().initialize_dependent_event<InetSocketTLSEvent>(this, std::move(file));
+            IoUringManager::getInstance().initialize_dependent_event<InetSocketTLSEvent>(this, file);
         else
-            IoUringManager::getInstance().initialize_dependent_event<InetSocketReadWriteEventBytes>(this, std::move(file));
+            IoUringManager::getInstance().initialize_dependent_event<InetSocketReadWriteEventBytes>(this, file);
     }
 
     virtual ~InetSocketReadWriteEventHTTP() {
@@ -37,12 +38,12 @@ public:
      * @brief Initiates or restarts the HTTP reading process.
      * Reassigns the parser for a new request and processes any leftover data.
      */
-    CallResponse read_http(uint64_t taskid) {
+    CallResponse read_http(uint64_t) {
         read_op_ = true;
-        parser_ = std::make_unique<http::request_parser<http::string_body>>();
+        parser_ = make_unique<http::request_parser<http::string_body>>();
         if (buffer_.size() > 0) {
             if (try_parse()) {
-                handle_read(ID_READ, 0);
+                handle_read(0);
             }
         }
         arm_read();
@@ -52,14 +53,14 @@ public:
     /**
      * @brief Returns the completed parser by moving it out.
      */
-    std::pair<GetDataInfo, std::unique_ptr<http::request_parser<http::string_body>>> get_data(uint64_t taskid) {
+    pair<GetDataInfo, unique_ptr<http::request_parser<http::string_body>>> get_data(uint64_t) {
         return {GetDataInfo {true}, std::move(parser_)};
     }
 
     /**
      * @brief Serializes an HTTP response into the write buffer and starts the write process.
      */
-    CallResponse write_http(uint64_t taskid, http::response<http::string_body> res) {
+    CallResponse write_http(uint64_t, http::response<http::string_body> res) {
         read_op_ = false;
         http::response_serializer<http::string_body> sr{res};
         boost::system::error_code ec;
@@ -80,34 +81,36 @@ public:
     /**
      * @brief Handle the completion queue entry (CQE) result.
      */
-    void on_new_data(int op, EventType event) override {
-        auto res = std::get<ChildTaskCompletion>(event);
+    void on_new_data(int, EventType event) override {
+        auto res = get<ChildTaskCompletion>(event);
         if (res.return_code <= 0) {
             IoUringManager::getInstance().finalize_current_task(true, res.return_code);
+            IoUringManager::getInstance().consume_event(res.task_id);
             return;
         }
 
         if (read_op_) {
-            handle_read(op, res.return_code);
+            handle_read(res.return_code);
         } else {
-            handle_write(op, res.return_code);
+            handle_write(res.return_code);
         }
+        IoUringManager::getInstance().consume_event(res.task_id);
     }
 
-    std::string get_info() const override {
+    string get_info() const override {
         return "HTTP parser";
     }
 
 protected:
     bool read_op_;
     uint64_t taskid_writer_, taskid_reader_;
-    std::unique_ptr<http::request_parser<http::string_body>> parser_;
+    unique_ptr<http::request_parser<http::string_body>> parser_;
     boost::beast::flat_buffer buffer_;
     boost::beast::flat_buffer write_buffer_;
 
     bool tls_enabled_;
 
-    void handle_read(int id, int res) {
+    void handle_read(int res) {
         if (res > 0) {
             buffer_.commit(res);
         }
@@ -121,7 +124,7 @@ protected:
         arm_read();
     }
 
-    void handle_write(int id, int res) {
+    void handle_write(int res) {
         if (res > 0) {
             write_buffer_.consume(res);
         }

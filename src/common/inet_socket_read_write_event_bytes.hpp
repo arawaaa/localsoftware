@@ -7,29 +7,31 @@
 #include "io_uring_manager.hpp"
 #include "defs.hpp"
 
+using namespace std;
+
 class InetSocketReadWriteEventBytes : public IoEvent {
 public:
-    InetSocketReadWriteEventBytes(std::unique_ptr<File> file)
-        : IoEvent(std::move(file)) {}
+    InetSocketReadWriteEventBytes(shared_ptr<File> file)
+        : IoEvent(file) {}
 
-    CallResponse read(uint64_t taskid, void* buf, size_t len, bool read_all = true) {
+    CallResponse read(uint64_t, void* buf, size_t len, bool read_all = true) {
         sticky_read_ = read_all;
         read_buffer_ = buf;
         read_bytes_left_ = len;
         read_total_processed_ = 0;
-        IoUringManager::getInstance().cache_call(this, ID_READ, io_uring_prep_recv, fd_, read_buffer_, read_bytes_left_, 0);
+        IoUringManager::getInstance().cache_call(this, ID_READ, io_uring_prep_recv, file_->get(), read_buffer_, read_bytes_left_, 0);
         return {"Read len bytes into buf", true, OpHint::OP_HINT_READ | OpHint::OP_HINT_NETWORK};
     }
 
-    CallResponse write(uint64_t taskid, void* buf, size_t len) {
+    CallResponse write(uint64_t, void* buf, size_t len) {
         write_buffer_ = buf;
         write_bytes_left_ = len;
         write_total_processed_ = 0;
-        IoUringManager::getInstance().cache_call(this, ID_WRITE, io_uring_prep_send, fd_, write_buffer_, write_bytes_left_, MSG_NOSIGNAL);
+        IoUringManager::getInstance().cache_call(this, ID_WRITE, io_uring_prep_send, file_->get(), write_buffer_, write_bytes_left_, MSG_NOSIGNAL);
         return {"Write len bytes from buf", true, OpHint::OP_HINT_WRITE | OpHint::OP_HINT_NETWORK};
     }
 
-    std::pair<GetDataInfo, void*> get_data(uint64_t id) {
+    pair<GetDataInfo, void*> get_data(uint64_t id) {
         if (id == ID_READ) {
             return {{true}, read_buffer_};
         }
@@ -37,7 +39,7 @@ public:
     }
 
     void on_new_data(int op, EventType event) override {
-        int res = std::get<IoUringResult>(event).res;
+        int res = get<IoUringResult>(event).res;
         if (res <= 0) {
             IoUringManager::getInstance().finalize_current_task(true, res);
             return;
@@ -50,8 +52,8 @@ public:
         }
     }
 
-    std::string get_info() const override {
-        return "inet socket readwriter FD " + std::to_string(file_->get());
+    string get_info() const override {
+        return "inet socket readwriter FD " + to_string(file_->get());
     }
 
 private:
@@ -62,7 +64,7 @@ private:
         read_total_processed_ += res;
         if (sticky_read_ && read_bytes_left_ > 0) {
             void* next_ptr = static_cast<char*>(read_buffer_) + read_total_processed_;
-            IoUringManager::getInstance().cache_call(this, ID_READ, io_uring_prep_recv, fd_, next_ptr, read_bytes_left_, 0);
+            IoUringManager::getInstance().cache_call(this, ID_READ, io_uring_prep_recv, file_->get(), next_ptr, read_bytes_left_, 0);
         } else {
             IoUringManager::getInstance().finalize_current_task(false, read_total_processed_);
         }
@@ -73,7 +75,7 @@ private:
         write_total_processed_ += res;
         if (write_bytes_left_ > 0) {
             void* next_ptr = static_cast<char*>(write_buffer_) + write_total_processed_;
-            IoUringManager::getInstance().cache_call(this, ID_WRITE, io_uring_prep_send, fd_, next_ptr, write_bytes_left_, MSG_NOSIGNAL);
+            IoUringManager::getInstance().cache_call(this, ID_WRITE, io_uring_prep_send, file_->get(), next_ptr, write_bytes_left_, MSG_NOSIGNAL);
         } else {
             IoUringManager::getInstance().finalize_current_task(false, write_total_processed_);
         }

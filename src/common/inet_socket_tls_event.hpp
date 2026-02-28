@@ -1,7 +1,6 @@
 #pragma once
 
 #include <memory>
-#include <utility>
 
 #include <openssl/bio.h>
 #include <openssl/ssl.h>
@@ -20,14 +19,14 @@
  */
 class InetSocketTLSEvent : public IoEvent {
 public:
-    InetSocketTLSEvent(std::unique_ptr<File> file, bool use_ssl = false)
-        : IoEvent(file->get())
+    InetSocketTLSEvent(std::shared_ptr<File> file)
+        : IoEvent(file)
     {
         if ((ssl_ = SSL_new(IoUringManager::getInstance().get_tls_ctx())) == NULL) {
             throw std::runtime_error{"Failed to create ssl object"};
         }
 
-        IoUringManager::getInstance().initialize_dependent_event<InetSocketReadWriteEventBytes>(this, std::move(file));
+        IoUringManager::getInstance().initialize_dependent_event<InetSocketReadWriteEventBytes>(this, file);
 
         readbuf_ = BIO_new(BIO_s_mem());
         writebuf_ = BIO_new(BIO_s_mem());
@@ -41,39 +40,40 @@ public:
         }
     }
 
-    CallResponse read(uint64_t taskid, char* buf, size_t len, bool read_all = true) {
+    CallResponse read(uint64_t, char* buf, size_t len, bool read_all = true) {
         sticky_read_ = read_all;
         op_read_ = true;
         u_read_ = buf;
         u_readlen_ = len;
         u_read_p_ = 0;
-        handle_read(ID_READ, 0);
+        handle_read(0);
         return {"Read len bytes into buf TLS", true, OpHint::OP_HINT_READ | OpHint::OP_HINT_NETWORK};
     }
 
-    CallResponse write(uint64_t taskid, char* buf, size_t len) {
+    CallResponse write(uint64_t, char* buf, size_t len) {
         op_read_ = false;
         u_write_ = buf;
         u_writelen_ = len;
         u_write_p_ = 0;
-        handle_write(ID_WRITE, 0);
+        handle_write(0);
         return {"Write len bytes from buf TLS", true, OpHint::OP_HINT_WRITE | OpHint::OP_HINT_NETWORK};
     }
 
     /**
      * @brief Handle the completion queue entry (CQE) result.
      */
-    void on_new_data(int op, EventType event) override {
+    void on_new_data(int, EventType event) override {
         auto res = std::get<ChildTaskCompletion>(event);
         if (res.return_code <= 0) {
             IoUringManager::getInstance().finalize_current_task(true, res.return_code);
+            IoUringManager::getInstance().consume_event(res.task_id);
             return;
         }
 
         if (op_read_) {
-            handle_read(op, res.task_id == taskid_read_ ? res.return_code : 0);
+            handle_read(res.task_id == taskid_read_ ? res.return_code : 0);
         } else {
-            handle_write(op, res.task_id == taskid_write_ ? res.return_code : 0);
+            handle_write(res.task_id == taskid_write_ ? res.return_code : 0);
         }
         IoUringManager::getInstance().consume_event(res.task_id);
     }
@@ -102,7 +102,7 @@ protected:
     char e_read_[MAXFRAMELENGTH], e_write_[MAXFRAMELENGTH];
     TLSState state_;
 
-    void handle_read(int id, int res) {
+    void handle_read(int res) {
         BIO_write(readbuf_, e_read_, res);
         if (state_ == TLSState::WaitHello) {
             int ec = SSL_accept(ssl_);
@@ -151,7 +151,7 @@ protected:
         } while (BIO_ctrl_pending(readbuf_) && (u_readlen_ - u_read_p_) && (sticky_read_ || !u_read_p_));}
     }
 
-    void handle_write(int id, int res) {
+    void handle_write(int res) {
         if (res < 0) return IoUringManager::getInstance().finalize_current_task(true, res);
 
         size_t numread = 0;

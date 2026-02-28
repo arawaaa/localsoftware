@@ -21,11 +21,13 @@
 #include "bandwidth_monitor/bandwidth_data_write_event.hpp"
 #include "aio_landing/aio_landing_accepter.hpp"
 
+using namespace std;
+
 // Constants
-const std::string INTERFACE = "wlan0";
-const std::string RX_FILE = "/sys/class/net/" + INTERFACE + "/statistics/rx_bytes";
-const std::string TX_FILE = "/sys/class/net/" + INTERFACE + "/statistics/tx_bytes";
-const std::string LOG_FILE = "/var/log/wlan_monitor/wlan_usage.log";
+const string INTERFACE = "wlan0";
+const string RX_FILE = "/sys/class/net/" + INTERFACE + "/statistics/rx_bytes";
+const string TX_FILE = "/sys/class/net/" + INTERFACE + "/statistics/tx_bytes";
+const string LOG_FILE = "/var/log/wlan_monitor/wlan_usage.log";
 constexpr int SERVER_PORT = 8888;
 constexpr int HTTP_PORT = 80;
 constexpr int HTTPS_PORT = 443;
@@ -33,15 +35,15 @@ constexpr int HTTPS_PORT = 443;
 // Global speed state
 double global_rx_speed = 0.0;
 double global_tx_speed = 0.0;
-std::mutex speed_mutex;
+mutex speed_mutex;
 
 // Base64 Implementation
 const char encoding_table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 const int mod_table[] = {0, 2, 1};
 
-std::string base64_encode(const unsigned char *data, size_t input_length) {
+string base64_encode(const unsigned char *data, size_t input_length) {
     size_t output_length = 4 * ((input_length + 2) / 3);
-    std::string encoded_data(output_length, '\0');
+    string encoded_data(output_length, '\0');
 
     for (size_t i = 0, j = 0; i < input_length;) {
         uint32_t octet_a = i < input_length ? data[i++] : 0;
@@ -62,8 +64,8 @@ std::string base64_encode(const unsigned char *data, size_t input_length) {
     return encoded_data;
 }
 
-unsigned long long read_bytes(const std::string& filename) {
-    std::ifstream f(filename);
+unsigned long long read_bytes(const string& filename) {
+    ifstream f(filename);
     unsigned long long bytes = 0;
     if (f >> bytes) {
         return bytes;
@@ -72,11 +74,11 @@ unsigned long long read_bytes(const std::string& filename) {
 }
 
 void log_entry(time_t ts, int d, int m, int y, int h, unsigned long long tx, unsigned long long rx) {
-    std::ofstream f(LOG_FILE, std::ios::app);
+    ofstream f(LOG_FILE, ios::app);
     if (f) {
         f << "[" << ts << "] " 
-          << std::setw(2) << std::setfill('0') << d << "/" 
-          << std::setw(2) << std::setfill('0') << m << "/" 
+          << setw(2) << setfill('0') << d << "/"
+          << setw(2) << setfill('0') << m << "/"
           << y << " " << h << " " << tx << " " << rx << "\n";
     }
 }
@@ -132,9 +134,9 @@ void server_func() {
         return;
     }
 
-    std::cout << "io_uring WebSocket Server listening on port " << SERVER_PORT << std::endl;
-    std::cout << "io_uring HTTP Landing Server listening on port " << HTTP_PORT << std::endl;
-    std::cout << "io_uring HTTPS Landing Server listening on port " << HTTPS_PORT << std::endl;
+    cout << "io_uring WebSocket Server listening on port " << SERVER_PORT << endl;
+    cout << "io_uring HTTP Landing Server listening on port " << HTTP_PORT << endl;
+    cout << "io_uring HTTPS Landing Server listening on port " << HTTPS_PORT << endl;
 
     // Initialize io_uring
     struct io_uring ring;
@@ -146,17 +148,17 @@ void server_func() {
     }
 
     // Setup WebSocket Accept Event
-    auto ws_file = std::make_unique<File>(ws_fd);
+    auto ws_file = make_shared<File>(ws_fd);
     auto* ws_accept_ev = new BandwidthMonitorAcceptEvent(std::move(ws_file));
     ws_accept_ev->prepare_accept();
 
     // Setup HTTP Landing Accept Event
-    auto http_file = std::make_unique<File>(http_fd);
+    auto http_file = make_shared<File>(http_fd);
     auto* http_accept_ev = new AioLandingAcceptEvent(std::move(http_file), false, "/srv/landing");
     http_accept_ev->prepare_accept();
 
     // Setup HTTPS Landing Accept Event
-    auto https_file = std::make_unique<File>(https_fd);
+    auto https_file = make_shared<File>(https_fd);
     auto* https_accept_ev = new AioLandingAcceptEvent(std::move(https_file), true, "/srv/landing");
     https_accept_ev->prepare_accept();
 
@@ -168,11 +170,11 @@ void server_func() {
 }
 
 int main() {
-    std::cout << "Starting bandwidth monitor for " << INTERFACE << "..." << std::endl;
-    std::cout << "Logging hourly and daily totals to " << LOG_FILE << std::endl;
+    cout << "Starting bandwidth monitor for " << INTERFACE << "..." << endl;
+    cout << "Logging hourly and daily totals to " << LOG_FILE << endl;
     
     // Start unified io_uring server thread
-    std::thread server_t(server_func);
+    thread server_t(server_func);
     server_t.detach();
 
     unsigned long long rx_prev = read_bytes(RX_FILE);
@@ -192,7 +194,7 @@ int main() {
     unsigned long long daily_tx = 0;
 
     while (true) {
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+        this_thread::sleep_for(chrono::seconds(1));
 
         unsigned long long rx_curr = read_bytes(RX_FILE);
         unsigned long long tx_curr = read_bytes(TX_FILE);
@@ -202,7 +204,7 @@ int main() {
 
         // Update global speed guarded by mutex
         {
-            std::lock_guard<std::mutex> lock(speed_mutex);
+            lock_guard<mutex> lock(speed_mutex);
             global_rx_speed = static_cast<double>(rx_diff);
             global_tx_speed = static_cast<double>(tx_diff);
         }

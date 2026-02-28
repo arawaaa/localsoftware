@@ -3,7 +3,6 @@
 #include "../common/io_event.hpp"
 #include "../common/io_uring_manager.hpp"
 #include <liburing.h>
-#include <iostream>
 
 class BandwidthDataWriteEvent; // Forward declaration
 

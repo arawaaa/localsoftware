@@ -10,12 +10,15 @@
 #include <typeindex>
 #include <queue>
 #include <liburing.h>
+#include <ranges>
 
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 
 #include "io_event.hpp"
 #include "defs.hpp"
+
+using namespace std;
 
 class IoUringManager {
 public:
@@ -29,31 +32,40 @@ public:
     IoUringManager(const IoUringManager&) = delete;
     IoUringManager& operator=(const IoUringManager&) = delete;
 
+    // Do not call queue any async functions in the constructor
     template <typename T, typename... Args>
     size_t initialize_dependent_event(IoEvent* parent, Args&&... args) {
-        auto ev = std::make_unique<T>(std::forward<Args>(args)...);
+        auto ev = make_shared<T>(std::forward<Args>(args)...);
         ev->uring_data_.outer_event = parent;
-        parent->uring_data_.events[std::type_index(typeid(T))].emplace_back(std::move(ev));
-        return parent->uring_data_.events[std::type_index(typeid(T))].size() - 1;
+        for (auto [idx, shared_ptr] : views::enumerate(parent->uring_data_.events[type_index(typeid(T))])) {
+            if (!shared_ptr) {
+                shared_ptr = std::move(ev);
+                ev->uring_data_.id = idx;
+                return idx;
+            }
+        }
+        parent->uring_data_.events[type_index(typeid(T))].emplace_back(std::move(ev));
+        ev->uring_data_.id = parent->uring_data_.events[type_index(typeid(T))].size() - 1;
+        return parent->uring_data_.events[type_index(typeid(T))].size() - 1;
     }
 
     template <typename T>
     auto get_data(IoEvent* parent, int idx, uint64_t id) {
-        auto res = static_cast<T*>(parent->uring_data_.events[std::type_index(typeid(T))][idx].get())->get_data(id);
+        auto res = static_cast<T*>(parent->uring_data_.events[type_index(typeid(T))][idx].get())->get_data(id);
         using DataT = decltype(res.second);
         if (res.first.valid) {
-            return std::optional<DataT>(std::move(res.second));
+            return optional<DataT>(std::move(res.second));
         }
-        return std::optional<DataT>();
+        return optional<DataT>();
     }
 
     template <typename T, typename Method, typename... Args>
-    std::pair<uint64_t, bool> call_dependent_function(IoEvent* parent, int idx, Method method, Args&&... args) {
+    pair<uint64_t, bool> call_dependent_function(IoEvent* parent, int idx, Method method, Args&&... args) {
         uint64_t id = next_id_++;
         uint64_t old_running_id = running_id_;
         running_id_ = id;
         
-        T* ev = static_cast<T*>(parent->uring_data_.events[std::type_index(typeid(T))][idx].get());
+        T* ev = static_cast<T*>(parent->uring_data_.events[type_index(typeid(T))][idx].get());
         CallResponse resp = (ev->*method)(id, std::forward<Args>(args)...);
         
         CallData& data = call_map_[id];
@@ -143,14 +155,14 @@ public:
     }
 
     void add(int op, int res, IoEvent* ev) {
-        std::lock_guard<std::mutex> lock(non_uring_mutex_);
+        lock_guard<mutex> lock(non_uring_mutex_);
         non_uring_events_.emplace_back(op | RequestID::FLAG_REDO_CACHED_DATA, res, ev, running_id_);
     }
 
-    std::optional<std::tuple<int, int, IoEvent*, uint64_t>> dequeue_non_uring_event() {
-        std::lock_guard<std::mutex> lock(non_uring_mutex_);
+    optional<tuple<int, int, IoEvent*, uint64_t>> dequeue_non_uring_event() {
+        lock_guard<mutex> lock(non_uring_mutex_);
         if (non_uring_events_.empty()) {
-            return std::nullopt;
+            return nullopt;
         }
         auto item = non_uring_events_.front();
         non_uring_events_.pop_front();
@@ -160,10 +172,10 @@ public:
     void submit_events(struct io_uring* ring) {
         if (pending_events_.empty()) return;
         for (auto& item : pending_events_) {
-            IoEvent* ev = std::get<0>(item);
-            int op = std::get<1>(item);
-            uint64_t rid = std::get<2>(item);
-            auto& func = std::get<3>(item);
+            IoEvent* ev = get<0>(item);
+            int op = get<1>(item);
+            uint64_t rid = get<2>(item);
+            auto& func = get<3>(item);
             
             struct io_uring_sqe* sqe = io_uring_get_sqe(ring);
             if (sqe) {
@@ -212,12 +224,12 @@ private:
     IoUringManager() {
         tls_ctx_ = SSL_CTX_new(TLS_server_method());
         if (tls_ctx_ == NULL) {
-            throw std::runtime_error{"Unable to create libssl context"};
+            throw runtime_error{"Unable to create libssl context"};
         }
 
         if (!SSL_CTX_set_min_proto_version(tls_ctx_, TLS1_2_VERSION)) {
             SSL_CTX_free(tls_ctx_);
-            throw std::runtime_error{"Unable to set minimum TLS version to 1.2"};
+            throw runtime_error{"Unable to set minimum TLS version to 1.2"};
         }
 
         auto opts = SSL_OP_IGNORE_UNEXPECTED_EOF | SSL_OP_NO_RENEGOTIATION | SSL_OP_CIPHER_SERVER_PREFERENCE;
@@ -225,12 +237,12 @@ private:
 
         if (SSL_CTX_use_certificate_chain_file(tls_ctx_, "/etc/letsencrypt/live/arnavrawat.xyz/fullchain.pem") <= 0) {
             SSL_CTX_free(tls_ctx_);
-            throw std::runtime_error{"Unable to load certificate chain"};
+            throw runtime_error{"Unable to load certificate chain"};
         }
 
         if (SSL_CTX_use_PrivateKey_file(tls_ctx_, "/etc/letsencrypt/live/arnavrawat.xyz/privkey.pem", SSL_FILETYPE_PEM) <= 0) {
             SSL_CTX_free(tls_ctx_);
-            throw std::runtime_error{"Unable to load private key. Check for certificate / key mismatch."};
+            throw runtime_error{"Unable to load private key. Check for certificate / key mismatch."};
         }
 
         // No session resumption for now
@@ -243,11 +255,11 @@ private:
     }
 
     SSL_CTX* tls_ctx_;
-    std::vector<std::tuple<IoEvent*, int, uint64_t, std::function<void(struct io_uring_sqe*)>>> pending_events_;
-    std::mutex non_uring_mutex_;
-    std::deque<std::tuple<int, int, IoEvent*, uint64_t>> non_uring_events_;
+    vector<tuple<IoEvent*, int, uint64_t, function<void(struct io_uring_sqe*)>>> pending_events_;
+    mutex non_uring_mutex_;
+    deque<tuple<int, int, IoEvent*, uint64_t>> non_uring_events_;
     uint64_t next_id_ = 1;
     uint64_t running_id_ = 0;
-    std::map<uint64_t, CallData> call_map_;
-    std::queue<uint64_t> propagation_queue_;
+    map<uint64_t, CallData> call_map_;
+    queue<uint64_t> propagation_queue_;
 };

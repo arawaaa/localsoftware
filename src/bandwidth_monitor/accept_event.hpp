@@ -11,18 +11,18 @@
 class BandwidthMonitorAcceptEvent : public IoEvent {
 public:
     // Takes ownership of the listening server socket file descriptor
-    BandwidthMonitorAcceptEvent(std::unique_ptr<File> server_file) 
-        : IoEvent(std::move(server_file)) {
+    BandwidthMonitorAcceptEvent(std::shared_ptr<File> server_file)
+        : IoEvent(server_file) {
         client_addr_len_ = sizeof(client_addr_);
     }
 
     void prepare_accept() {
-        IoUringManager::getInstance().cache_call(this, ID_DEFAULT, io_uring_prep_accept, fd_, 
+        IoUringManager::getInstance().cache_call(this, ID_DEFAULT, io_uring_prep_accept, file_->get(),
                          reinterpret_cast<struct sockaddr*>(&client_addr_), 
                          &client_addr_len_, 0);
     }
 
-    void on_new_data(int op, EventType event) override {
+    void on_new_data(int, EventType event) override {
         int res = std::get<IoUringResult>(event).res;
         if (res < 0) {
             // Re-arm to keep accepting even on failure
@@ -43,7 +43,7 @@ public:
     }
 
     std::string get_info() const override {
-        return "BandwidthMonitorAcceptEvent on FD " + std::to_string(fd_);
+        return "BandwidthMonitorAcceptEvent on FD " + std::to_string(file_->get());
     }
 
 private:
