@@ -1,18 +1,16 @@
 #pragma once
 
-#include <iostream>
+#include <memory>
+#include <utility>
+
+#include <openssl/bio.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+
+#include "defs.hpp"
 #include "common/inet_socket_read_write_event_bytes.hpp"
 #include "io_event.hpp"
 #include "io_uring_manager.hpp"
-#include "defs.hpp"
-#include <boost/beast/http.hpp>
-#include <boost/beast/core/flat_buffer.hpp>
-#include <boost/asio/buffer.hpp>
-#include <memory>
-#include <openssl/bio.h>
-#include <utility>
-#include <openssl/ssl.h>
-#include <openssl/err.h>
 
 #define MAXFRAMELENGTH (size_t)16384
 #define MAXUFRAMELENGTH (size_t)(16384 - 1024) // little bit of margin
@@ -43,7 +41,7 @@ public:
         }
     }
 
-    CallResponse read(int taskid, char* buf, size_t len, bool read_all = true) {
+    CallResponse read(uint64_t taskid, char* buf, size_t len, bool read_all = true) {
         sticky_read_ = read_all;
         op_read_ = true;
         u_read_ = buf;
@@ -53,7 +51,7 @@ public:
         return {"Read len bytes into buf TLS", true, OpHint::OP_HINT_READ | OpHint::OP_HINT_NETWORK};
     }
 
-    CallResponse write(int taskid, char* buf, size_t len) {
+    CallResponse write(uint64_t taskid, char* buf, size_t len) {
         op_read_ = false;
         u_write_ = buf;
         u_writelen_ = len;
@@ -138,7 +136,7 @@ protected:
                     }
                     return;
                 case SSL_ERROR_NONE:
-                    if (u_readlen_ - u_read_p_ == 0 || !sticky_read_ && u_read_p_) {
+                    if (u_readlen_ - u_read_p_ == 0 || (!sticky_read_ && u_read_p_)) {
                         // Done, or received initial message only
                         IoUringManager::getInstance().finalize_current_task(false, u_read_p_);
                     } else if (!BIO_ctrl_pending(readbuf_)) {

@@ -3,11 +3,11 @@
 #include <string>
 #include <filesystem>
 #include <fstream>
-#include <optional>
 #include <functional>
 #include <map>
 #include <vector>
 #include <utility>
+
 #include <boost/beast/http.hpp>
 
 namespace http = boost::beast::http;

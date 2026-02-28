@@ -1,11 +1,11 @@
 #pragma once
 
 #include <cstdint>
-#include <iostream>
+#include <utility>
+
 #include "io_event.hpp"
 #include "io_uring_manager.hpp"
 #include "defs.hpp"
-#include <utility>
 
 class InetSocketReadWriteEventBytes : public IoEvent {
 public:

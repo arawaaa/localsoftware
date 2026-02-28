@@ -1,16 +1,13 @@
 #pragma once
 
-#include "../common/inet_socket_read_write_event_http.hpp"
-#include "../common/http_manager.hpp"
-#include <fstream>
-#include <thread>
-#include <iostream>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include "common/defs.hpp"
 #include "common/io_uring_manager.hpp"
-#include "s40_client.hpp"
+
+#include "../common/inet_socket_read_write_event_http.hpp"
+#include "../common/http_manager.hpp"
 
 class AioLandingHTTP : public IoEvent {
 public:

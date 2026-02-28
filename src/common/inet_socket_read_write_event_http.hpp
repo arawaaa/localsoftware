@@ -1,18 +1,17 @@
 #pragma once
 
+#include <memory>
+#include <utility>
+
+#include <boost/beast/http.hpp>
+#include <boost/beast/core/flat_buffer.hpp>
+#include <boost/asio/buffer.hpp>
+
 #include "common/inet_socket_read_write_event_bytes.hpp"
 #include "io_event.hpp"
 #include "io_uring_manager.hpp"
 #include "inet_socket_tls_event.hpp"
 #include "defs.hpp"
-#include <boost/beast/http.hpp>
-#include <boost/beast/core/flat_buffer.hpp>
-#include <boost/asio/buffer.hpp>
-#include <memory>
-#include <openssl/bio.h>
-#include <utility>
-#include <openssl/ssl.h>
-#include <openssl/err.h>
 
 namespace http = boost::beast::http;
 

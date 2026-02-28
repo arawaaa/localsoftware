@@ -1,6 +1,5 @@
 #pragma once
 
-#include <liburing.h>
 #include <vector>
 #include <functional>
 #include <tuple>
@@ -8,12 +7,13 @@
 #include <mutex>
 #include <deque>
 #include <optional>
-#include <openssl/bio.h>
+#include <typeindex>
+#include <queue>
+#include <liburing.h>
+
 #include <openssl/ssl.h>
 #include <openssl/err.h>
-#include <typeindex>
-#include <iostream>
-#include <queue>
+
 #include "io_event.hpp"
 #include "defs.hpp"
 

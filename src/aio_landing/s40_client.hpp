@@ -1,10 +1,10 @@
 #pragma once
 
 #include <string>
-#include <vector>
 #include <iostream>
 #include <thread>
 #include <chrono>
+
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
 #include <boost/beast/ssl.hpp>
@@ -14,6 +14,7 @@
 #include <boost/asio/ssl/error.hpp>
 #include <boost/asio/ssl/stream.hpp>
 #include <boost/json.hpp>
+
 #include <openssl/ssl.h>
 
 namespace beast = boost::beast;

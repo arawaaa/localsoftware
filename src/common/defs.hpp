@@ -1,9 +1,6 @@
 #pragma once
 
 #include <string>
-#include <map>
-#include <typeindex>
-
 #include <set>
 #include <cstdint>
 #include <variant>
