@@ -12,7 +12,7 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <typeindex>
-#include <typeinfo>
+#include <iostream>
 #include <queue>
 #include "io_event.hpp"
 #include "defs.hpp"
@@ -30,15 +30,16 @@ public:
     IoUringManager& operator=(const IoUringManager&) = delete;
 
     template <typename T, typename... Args>
-    void initialize_dependent_event(IoEvent* parent, Args&&... args) {
+    size_t initialize_dependent_event(IoEvent* parent, Args&&... args) {
         auto ev = std::make_unique<T>(std::forward<Args>(args)...);
         ev->uring_data_.outer_event = parent;
-        parent->uring_data_.events[std::type_index(typeid(T))] = std::move(ev);
+        parent->uring_data_.events[std::type_index(typeid(T))].emplace_back(std::move(ev));
+        return parent->uring_data_.events[std::type_index(typeid(T))].size() - 1;
     }
 
     template <typename T>
-    auto get_data(IoEvent* parent, int id) {
-        auto res = static_cast<T*>(parent->uring_data_.events[std::type_index(typeid(T))].get())->get_data(id);
+    auto get_data(IoEvent* parent, int idx, uint64_t id) {
+        auto res = static_cast<T*>(parent->uring_data_.events[std::type_index(typeid(T))][idx].get())->get_data(id);
         using DataT = decltype(res.second);
         if (res.first.valid) {
             return std::optional<DataT>(std::move(res.second));
@@ -47,12 +48,12 @@ public:
     }
 
     template <typename T, typename Method, typename... Args>
-    std::pair<uint64_t, bool> call_dependent_function(IoEvent* parent, Method method, Args&&... args) {
+    std::pair<uint64_t, bool> call_dependent_function(IoEvent* parent, int idx, Method method, Args&&... args) {
         uint64_t id = next_id_++;
         uint64_t old_running_id = running_id_;
         running_id_ = id;
         
-        T* ev = static_cast<T*>(parent->uring_data_.events[std::type_index(typeid(T))].get());
+        T* ev = static_cast<T*>(parent->uring_data_.events[std::type_index(typeid(T))][idx].get());
         CallResponse resp = (ev->*method)(id, std::forward<Args>(args)...);
         
         CallData& data = call_map_[id];

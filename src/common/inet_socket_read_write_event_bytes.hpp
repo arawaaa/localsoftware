@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+#include <iostream>
 #include "io_event.hpp"
 #include "io_uring_manager.hpp"
 #include "defs.hpp"
@@ -27,7 +29,7 @@ public:
         return {"Write len bytes from buf", true, OpHint::OP_HINT_WRITE | OpHint::OP_HINT_NETWORK};
     }
 
-    std::pair<GetDataInfo, void*> get_data(int id) {
+    std::pair<GetDataInfo, void*> get_data(uint64_t id) {
         if (id == ID_READ) {
             return {{true}, read_buffer_};
         }

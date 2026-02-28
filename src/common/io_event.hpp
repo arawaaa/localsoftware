@@ -5,6 +5,7 @@
 #include <memory>
 #include <utility>
 #include <map>
+#include <vector>
 #include <typeindex>
 #include "file.hpp"
 #include "defs.hpp"
@@ -13,7 +14,7 @@ class IoEvent;
 
 struct IoUringData {
     int id;
-    std::map<std::type_index, std::unique_ptr<IoEvent>> events;
+    std::map<std::type_index, std::vector<std::unique_ptr<IoEvent>>> events;
     IoEvent* outer_event;
 };
 

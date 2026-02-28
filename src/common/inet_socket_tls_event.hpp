@@ -1,5 +1,6 @@
 #pragma once
 
+#include <iostream>
 #include "common/inet_socket_read_write_event_bytes.hpp"
 #include "io_event.hpp"
 #include "io_uring_manager.hpp"
@@ -22,7 +23,7 @@
 class InetSocketTLSEvent : public IoEvent {
 public:
     InetSocketTLSEvent(std::unique_ptr<File> file, bool use_ssl = false)
-        : IoEvent(std::move(file))
+        : IoEvent(file->get())
     {
         if ((ssl_ = SSL_new(IoUringManager::getInstance().get_tls_ctx())) == NULL) {
             throw std::runtime_error{"Failed to create ssl object"};
@@ -121,7 +122,7 @@ protected:
                 state_ = TLSState::Full;
             }
         }
-        if (state_ == TLSState::Full) { while (BIO_ctrl_pending(readbuf_) && (u_readlen_ - u_read_p_) && (sticky_read_ || !u_read_p_)) {
+        if (state_ == TLSState::Full) { do {
             size_t readbytes = 0;
             int ret = SSL_read_ex(ssl_, u_read_ + u_read_p_, u_readlen_ - u_read_p_, &readbytes);
             u_read_p_ += readbytes;
@@ -136,9 +137,6 @@ protected:
                         arm_read();
                     }
                     return;
-                case SSL_ERROR_WANT_WRITE:
-                    arm_write();
-                    return;
                 case SSL_ERROR_NONE:
                     if (u_readlen_ - u_read_p_ == 0 || !sticky_read_ && u_read_p_) {
                         // Done, or received initial message only
@@ -152,7 +150,7 @@ protected:
                     IoUringManager::getInstance().finalize_current_task(true, -1);
                     return;
             }
-        }}
+        } while (BIO_ctrl_pending(readbuf_) && (u_readlen_ - u_read_p_) && (sticky_read_ || !u_read_p_));}
     }
 
     void handle_write(int id, int res) {
@@ -171,26 +169,23 @@ protected:
                     arm_read();
                 }
                 break;
-            case SSL_ERROR_WANT_WRITE:
-                arm_write();
-                break;
             case SSL_ERROR_NONE:
+                if (BIO_ctrl_pending(writebuf_) || (u_writelen_ - u_write_p_)) {
+                    BIO_read_ex(writebuf_, e_write_, sizeof(e_write_), &e_writelen_);
+                    arm_write();
+                } else {
+                    IoUringManager::getInstance().finalize_current_task(false, u_writelen_);
+                }
                 break;
             default:
                 IoUringManager::getInstance().finalize_current_task(true, -1);
-        }
-
-        if (BIO_ctrl_pending(writebuf_) || (u_writelen_ - u_write_p_)) {
-            BIO_read_ex(writebuf_, e_write_, sizeof(e_write_), &e_writelen_);
-            arm_write();
-        } else {
-            IoUringManager::getInstance().finalize_current_task(false, 0);
         }
     }
 
     void arm_read() {
         auto [taskid, success] = IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventBytes>(
             this,
+            0,
             &InetSocketReadWriteEventBytes::read,
             e_read_,
             sizeof(e_read_),
@@ -202,6 +197,7 @@ protected:
     void arm_write() {
         auto [taskid, success] = IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventBytes>(
             this,
+            0,
             &InetSocketReadWriteEventBytes::write,
             e_write_,
             e_writelen_

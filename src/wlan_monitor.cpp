@@ -23,6 +23,7 @@
 #include "bandwidth_monitor/bandwidth_data_read_event.hpp"
 #include "bandwidth_monitor/bandwidth_data_write_event.hpp"
 #include "aio_landing/aio_landing_server.hpp"
+#include "aio_landing/aio_landing_accepter.hpp"
 
 // Constants
 const std::string INTERFACE = "wlan0";

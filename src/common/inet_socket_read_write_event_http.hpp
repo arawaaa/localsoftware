@@ -24,7 +24,10 @@ public:
     InetSocketReadWriteEventHTTP(std::unique_ptr<File> file, bool use_ssl = false)
         : IoEvent(file->get()), tls_enabled_(use_ssl)
     {
-        IoUringManager::getInstance().initialize_dependent_event<InetSocketTLSEvent>(this, std::move(file));
+        if (tls_enabled_)
+            IoUringManager::getInstance().initialize_dependent_event<InetSocketTLSEvent>(this, std::move(file));
+        else
+            IoUringManager::getInstance().initialize_dependent_event<InetSocketReadWriteEventBytes>(this, std::move(file));
     }
 
     virtual ~InetSocketReadWriteEventHTTP() {
@@ -36,6 +39,7 @@ public:
      * Reassigns the parser for a new request and processes any leftover data.
      */
     CallResponse read_http(uint64_t taskid) {
+        read_op_ = true;
         parser_ = std::make_unique<http::request_parser<http::string_body>>();
         if (buffer_.size() > 0) {
             if (try_parse()) {
@@ -57,6 +61,7 @@ public:
      * @brief Serializes an HTTP response into the write buffer and starts the write process.
      */
     CallResponse write_http(uint64_t taskid, http::response<http::string_body> res) {
+        read_op_ = false;
         http::response_serializer<http::string_body> sr{res};
         boost::system::error_code ec;
         while (!sr.is_done()) {
@@ -78,6 +83,10 @@ public:
      */
     void on_new_data(int op, EventType event) override {
         auto res = std::get<ChildTaskCompletion>(event);
+        if (res.return_code <= 0) {
+            IoUringManager::getInstance().finalize_current_task(true, res.return_code);
+            return;
+        }
 
         if (read_op_) {
             handle_read(op, res.return_code);
@@ -106,7 +115,7 @@ protected:
 
         bool done = try_parse();
         if (done) {
-            IoUringManager::getInstance().finalize_current_task(false, 0);
+            IoUringManager::getInstance().finalize_current_task(false, 1);
             return;
         }
 
@@ -122,7 +131,7 @@ protected:
             arm_write();
             return;
         }
-        IoUringManager::getInstance().finalize_current_task(false, 0);
+        IoUringManager::getInstance().finalize_current_task(false, 1);
     }
 
     void arm_read() {
@@ -131,6 +140,7 @@ protected:
         if (tls_enabled_) {
             auto [taskid, success] = IoUringManager::getInstance().call_dependent_function<InetSocketTLSEvent>(
                 this,
+                0,
                 &InetSocketTLSEvent::read,
                 (char*)mutable_buffer.data(),
                 4096,
@@ -140,6 +150,7 @@ protected:
         } else {
             auto [taskid, success] = IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventBytes>(
                 this,
+                0,
                 &InetSocketReadWriteEventBytes::read,
                 (char*)mutable_buffer.data(),
                 4096,
@@ -154,6 +165,7 @@ protected:
         if (tls_enabled_) {
             auto [taskid, success] = IoUringManager::getInstance().call_dependent_function<InetSocketTLSEvent>(
                 this,
+                0,
                 &InetSocketTLSEvent::write,
                 (char*)write_buffer_.data().data(),
                 write_buffer_.size()
@@ -162,6 +174,7 @@ protected:
         } else {
             auto [taskid, success] = IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventBytes>(
                 this,
+                0,
                 &InetSocketReadWriteEventBytes::write,
                 (char*)write_buffer_.data().data(),
                 write_buffer_.size()
@@ -185,10 +198,3 @@ protected:
     }
 };
 
-/**
- * @brief Identical to InetSocketReadWriteEventHTTP, provided for naming consistency.
- */
-class InetSocketReadWriteEventBytesHTTP : public InetSocketReadWriteEventHTTP {
-public:
-    using InetSocketReadWriteEventHTTP::InetSocketReadWriteEventHTTP;
-};
