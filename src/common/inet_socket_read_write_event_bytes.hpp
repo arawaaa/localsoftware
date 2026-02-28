@@ -10,18 +10,21 @@ public:
     InetSocketReadWriteEventBytes(std::unique_ptr<File> file)
         : IoEvent(std::move(file)) {}
 
-    void read(void* buf, size_t len) {
+    CallResponse read(uint64_t taskid, void* buf, size_t len, bool read_all = true) {
+        sticky_read_ = read_all;
         read_buffer_ = buf;
         read_bytes_left_ = len;
         read_total_processed_ = 0;
         IoUringManager::getInstance().cache_call(this, ID_READ, io_uring_prep_recv, fd_, read_buffer_, read_bytes_left_, 0);
+        return {"Read len bytes into buf", true, OpHint::OP_HINT_READ | OpHint::OP_HINT_NETWORK};
     }
 
-    void write(void* buf, size_t len) {
+    CallResponse write(uint64_t taskid, void* buf, size_t len) {
         write_buffer_ = buf;
         write_bytes_left_ = len;
         write_total_processed_ = 0;
         IoUringManager::getInstance().cache_call(this, ID_WRITE, io_uring_prep_send, fd_, write_buffer_, write_bytes_left_, MSG_NOSIGNAL);
+        return {"Write len bytes from buf", true, OpHint::OP_HINT_WRITE | OpHint::OP_HINT_NETWORK};
     }
 
     std::pair<GetDataInfo, void*> get_data(int id) {
@@ -34,6 +37,7 @@ public:
     void on_new_data(int op, EventType event) override {
         int res = std::get<IoUringResult>(event).res;
         if (res <= 0) {
+            IoUringManager::getInstance().finalize_current_task(true, res);
             return;
         }
         
@@ -49,26 +53,28 @@ public:
     }
 
 private:
-    bool prepare_read(int res) {
+    bool sticky_read_ = false;
+
+    void prepare_read(int res) {
         read_bytes_left_ -= res;
         read_total_processed_ += res;
-        if (read_bytes_left_ > 0) {
+        if (sticky_read_ && read_bytes_left_ > 0) {
             void* next_ptr = static_cast<char*>(read_buffer_) + read_total_processed_;
             IoUringManager::getInstance().cache_call(this, ID_READ, io_uring_prep_recv, fd_, next_ptr, read_bytes_left_, 0);
-            return false;
+        } else {
+            IoUringManager::getInstance().finalize_current_task(false, read_total_processed_);
         }
-        return true;
     }
 
-    bool prepare_write(int res) {
+    void prepare_write(int res) {
         write_bytes_left_ -= res;
         write_total_processed_ += res;
         if (write_bytes_left_ > 0) {
             void* next_ptr = static_cast<char*>(write_buffer_) + write_total_processed_;
             IoUringManager::getInstance().cache_call(this, ID_WRITE, io_uring_prep_send, fd_, next_ptr, write_bytes_left_, MSG_NOSIGNAL);
-            return false;
+        } else {
+            IoUringManager::getInstance().finalize_current_task(false, write_total_processed_);
         }
-        return true;
     }
 
 protected:

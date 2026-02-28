@@ -41,7 +41,7 @@ public:
         auto res = static_cast<T*>(parent->uring_data_.events[std::type_index(typeid(T))].get())->get_data(id);
         using DataT = decltype(res.second);
         if (res.first.valid) {
-            return std::optional<DataT>(res.second);
+            return std::optional<DataT>(std::move(res.second));
         }
         return std::optional<DataT>();
     }
@@ -135,6 +135,10 @@ public:
         pending_events_.emplace_back(ev, op, running_id_, [f = std::forward<F>(func), ...args = std::forward<Args>(args)](struct io_uring_sqe* sqe) mutable {
             f(sqe, args...);
         });
+    }
+
+    void consume_event(uint64_t taskid) {
+        call_map_.erase(taskid);
     }
 
     void add(int op, int res, IoEvent* ev) {

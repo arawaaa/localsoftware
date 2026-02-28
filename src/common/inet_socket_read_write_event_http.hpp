@@ -1,7 +1,9 @@
 #pragma once
 
+#include "common/inet_socket_read_write_event_bytes.hpp"
 #include "io_event.hpp"
 #include "io_uring_manager.hpp"
+#include "inet_socket_tls_event.hpp"
 #include "defs.hpp"
 #include <boost/beast/http.hpp>
 #include <boost/beast/core/flat_buffer.hpp>
@@ -20,54 +22,41 @@ namespace http = boost::beast::http;
 class InetSocketReadWriteEventHTTP : public IoEvent {
 public:
     InetSocketReadWriteEventHTTP(std::unique_ptr<File> file, bool use_ssl = false)
-        : IoEvent(std::move(file)), tls_enabled_(use_ssl)
+        : IoEvent(file->get()), tls_enabled_(use_ssl)
     {
-        if (tls_enabled_) {
-            if ((ssl_ = SSL_new(IoUringManager::getInstance().get_tls_ctx())) == NULL) {
-                throw std::runtime_error{"Failed to create ssl object"};
-            }
-
-            readbuf_ = BIO_new(BIO_s_mem());
-            writebuf_ = BIO_new(BIO_s_mem());
-            SSL_set_bio(ssl_, readbuf_, writebuf_);
-            state_ = TLSState::WaitHello;
-        }
+        IoUringManager::getInstance().initialize_dependent_event<InetSocketTLSEvent>(this, std::move(file));
     }
 
     virtual ~InetSocketReadWriteEventHTTP() {
-        if (tls_enabled_) {
-            if (ssl_) {
-                SSL_free(ssl_);
-            }
-        }
+
     }
 
     /**
      * @brief Initiates or restarts the HTTP reading process.
      * Reassigns the parser for a new request and processes any leftover data.
      */
-    void read_http() {
+    CallResponse read_http(uint64_t taskid) {
         parser_ = std::make_unique<http::request_parser<http::string_body>>();
         if (buffer_.size() > 0) {
             if (try_parse()) {
-                IoUringManager::getInstance().add(RequestID::ID_READ, 0, this);
-                return;
+                handle_read(ID_READ, 0);
             }
         }
-        arm_read(RequestID::ID_READ);
+        arm_read();
+        return {"Read HTTP", true, OP_HINT_READ};
     }
 
     /**
      * @brief Returns the completed parser by moving it out.
      */
-    std::unique_ptr<http::request_parser<http::string_body>> get_parser() {
-        return std::move(parser_);
+    std::pair<GetDataInfo, std::unique_ptr<http::request_parser<http::string_body>>> get_data(uint64_t taskid) {
+        return {GetDataInfo {true}, std::move(parser_)};
     }
 
     /**
      * @brief Serializes an HTTP response into the write buffer and starts the write process.
      */
-    void write_http(http::response<http::string_body> res) {
+    CallResponse write_http(uint64_t taskid, http::response<http::string_body> res) {
         http::response_serializer<http::string_body> sr{res};
         boost::system::error_code ec;
         while (!sr.is_done()) {
@@ -80,229 +69,105 @@ public:
             if (ec) break;
         }
 
-        if (tls_enabled_) {
-            // Start a non-uring event so that the writes can be handled in one logic flow
-            IoUringManager::getInstance().add(RequestID::ID_WRITE, 0, this);
-        } else {
-            arm_write(RequestID::ID_WRITE);
-        }
+        arm_write();
+        return {"HTTP Write", true, OP_HINT_WRITE};
     }
 
     /**
      * @brief Handle the completion queue entry (CQE) result.
      */
     void on_new_data(int op, EventType event) override {
-        int res = std::get<IoUringResult>(event).res;
+        auto res = std::get<ChildTaskCompletion>(event);
 
-        if (op & ID_READ) {
-            if (tls_enabled_) {
-                handle_read_tls(op, res);
-            } else {
-                handle_read(op, res);
-            }
-        } else if (op & ID_WRITE) {
-            if (tls_enabled_) {
-                handle_write_tls(op, res);
-            } else {
-                handle_write(op, res);
-            }
+        if (read_op_) {
+            handle_read(op, res.return_code);
+        } else {
+            handle_write(op, res.return_code);
         }
     }
 
+    std::string get_info() const override {
+        return "HTTP parser";
+    }
+
 protected:
-    bool read_retry_ = false, write_retry_ = false;
-    bool read_active_ = false, write_active_ = false;
+    bool read_op_;
+    uint64_t taskid_writer_, taskid_reader_;
     std::unique_ptr<http::request_parser<http::string_body>> parser_;
     boost::beast::flat_buffer buffer_;
     boost::beast::flat_buffer write_buffer_;
 
-    // TLS variables. Buffer procession for recv: recv -> encryptread -> ssl_read -> buffer_ -> parse
-    enum TLSState {
-        WaitHello,
-        Full
-    };
-
-    SSL* ssl_;
-    BIO *writebuf_, *readbuf_;
-    char encryptread_[4096], encryptwrite_[4096];
-    size_t write_length_;
     bool tls_enabled_;
-    TLSState state_;
-    std::function<int(size_t*)> read_func_cached_, write_func_cached_;
 
-    bool handle_read_tls(int id, int res) {
-        BIO_write(readbuf_, encryptread_, res);
-        if (state_ == TLSState::WaitHello) {
-            int ec = SSL_accept(ssl_);
-            if (SSL_get_error(ssl_, ec) == SSL_ERROR_WANT_READ) {
-                BIO_read_ex(writebuf_, encryptwrite_, 4096, &write_length_);
-                if (write_length_) {
-                    arm_write(id);
-                } else {
-                    arm_read(id);
-                }
-                return false;
-            } else if (SSL_get_error(ssl_, ec) != SSL_ERROR_NONE) {
-                ERR_print_errors_fp(stderr);
-                return true;
-            } else {
-                state_ = TLSState::Full;
-            }
-        }
-        if (state_ == TLSState::Full) {
-            bool read_any = false;
-            while (BIO_ctrl_pending(readbuf_)) {
-                size_t readbytes = 0;
-                int ret;
-                if (read_retry_) {
-                    ret = read_func_cached_(&readbytes);
-                    read_retry_ = false;
-                } else {
-                    auto mutable_buffer = buffer_.prepare(4096);
-                    read_func_cached_ = [&](size_t* readbytes) {
-                        return SSL_read_ex(ssl_, mutable_buffer.data(), mutable_buffer.size(), readbytes);
-                    };
-                    ret = read_func_cached_(&readbytes);
-                }
-                switch (SSL_get_error(ssl_, ret)) {
-                    case SSL_ERROR_WANT_READ:
-                        read_retry_ = true;
-                        if (BIO_ctrl_pending(writebuf_)) {
-                            BIO_read_ex(writebuf_, encryptwrite_, 4096, &write_length_);
-                            read_active_ = false;
-                            arm_write(id);
-                        } else {
-                            arm_read(id);
-                        }
-                        return false;
-                    case SSL_ERROR_WANT_WRITE:
-                        read_retry_ = true;
-                        read_active_ = false;
-                        arm_write(id);
-                        return false;
-                    case SSL_ERROR_NONE:
-                        read_any = true;
-                        break;
-                    default:
-                        return true;
-                }
-                buffer_.commit(readbytes);
-            }
-
-            if (try_parse()) {
-                return true;
-            } else {
-                arm_read(id);
-                return false;
-            }
-        }
-
-        return false;
-    }
-
-    bool handle_read(int id, int res) {
+    void handle_read(int id, int res) {
         if (res > 0) {
             buffer_.commit(res);
         }
 
         bool done = try_parse();
         if (done) {
-            return true;
+            IoUringManager::getInstance().finalize_current_task(false, 0);
+            return;
         }
 
-        arm_read(id);
-        return false;
+        arm_read();
     }
 
-    bool handle_write_tls(int id, int res) {
-        if (res < 0) return true;
-
-        int offset = 0;
-        if (res < write_length_) {
-            memmove(encryptwrite_, encryptwrite_ + res, write_length_ - res);
-            offset = write_length_ - res;
-        }
-        write_length_ = write_length_ - res;
-
-        if (state_ == TLSState::WaitHello) {
-            write_active_ = false;
-            IoUringManager::getInstance().add(RequestID::ID_READ, 0, this);
-            return false;
-        }
-
-        size_t numread;
-        int ret = SSL_write_ex(ssl_, write_buffer_.data().data(), write_buffer_.size(), &numread);
-
-        switch (SSL_get_error(ssl_, ret)) {
-            case SSL_ERROR_WANT_READ:
-                write_retry_ = true;
-                if (BIO_ctrl_pending(writebuf_) || write_length_) {
-                    BIO_read(writebuf_, encryptwrite_ + offset, 4096 - write_length_);
-                    arm_write(id);
-                } else {
-                    write_active_ = false;
-                    arm_read(id);
-                }
-                return false;
-            case SSL_ERROR_WANT_WRITE:
-                write_retry_ = true;
-                arm_write(id);
-                return false;
-            case SSL_ERROR_NONE:
-                write_retry_ = false;
-                write_buffer_.consume(numread);
-
-                if (BIO_ctrl_pending(writebuf_) || write_buffer_.size()) {
-                    int ret = BIO_read(writebuf_, encryptwrite_ + offset, 4096 - write_length_);
-                    write_length_ += ret;
-                    arm_write(id);
-                    return false;
-                } else {
-                    return true;
-                }
-            default:
-                return true;
-        }
-    }
-
-    bool handle_write(int id, int res) {
+    void handle_write(int id, int res) {
         if (res > 0) {
             write_buffer_.consume(res);
         }
 
         if (write_buffer_.size() > 0) {
-            arm_write(id);
-            return false;
+            arm_write();
+            return;
         }
-        return true;
+        IoUringManager::getInstance().finalize_current_task(false, 0);
     }
 
-    void arm_read(int id) {
-        if (read_active_ && !(id & RequestID::ID_READ)) return;
-        read_active_ = true;
+    void arm_read() {
+        // Prepare space in the flat_buffer for the next read
+        auto mutable_buffer = buffer_.prepare(4096);
         if (tls_enabled_) {
-            IoUringManager::getInstance().cache_call(this, ID_READ, io_uring_prep_recv, fd_,
-                                                    encryptread_, 4096, 0);
+            auto [taskid, success] = IoUringManager::getInstance().call_dependent_function<InetSocketTLSEvent>(
+                this,
+                &InetSocketTLSEvent::read,
+                (char*)mutable_buffer.data(),
+                4096,
+                false
+            );
+            taskid_reader_ = taskid;
         } else {
-            // Prepare space in the flat_buffer for the next read
-            auto mutable_buffer = buffer_.prepare(4096);
-            IoUringManager::getInstance().cache_call(this, ID_READ, io_uring_prep_read, fd_,
-                                                    mutable_buffer.data(), mutable_buffer.size(), 0);
+            auto [taskid, success] = IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventBytes>(
+                this,
+                &InetSocketReadWriteEventBytes::read,
+                (char*)mutable_buffer.data(),
+                4096,
+                false
+            );
+            taskid_reader_ = taskid;
         }
     }
 
-    void arm_write(int id) {
-        if (write_active_ && !(id & RequestID::ID_WRITE)) return;
-        write_active_ = true;
-
+    void arm_write() {
+        if (write_buffer_.size() == 0) return;
         if (tls_enabled_) {
-            IoUringManager::getInstance().cache_call(this, ID_WRITE, io_uring_prep_send, fd_, encryptwrite_,
-                                                     write_length_, MSG_NOSIGNAL);
+            auto [taskid, success] = IoUringManager::getInstance().call_dependent_function<InetSocketTLSEvent>(
+                this,
+                &InetSocketTLSEvent::write,
+                (char*)write_buffer_.data().data(),
+                write_buffer_.size()
+            );
+            taskid_writer_ = taskid;
         } else {
-            if (write_buffer_.size() > 0) {
-                IoUringManager::getInstance().cache_call(this, ID_WRITE, io_uring_prep_send, fd_,
-                                                        write_buffer_.data().data(), write_buffer_.size(), MSG_NOSIGNAL);
-            }
+            auto [taskid, success] = IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventBytes>(
+                this,
+                &InetSocketReadWriteEventBytes::write,
+                (char*)write_buffer_.data().data(),
+                write_buffer_.size()
+            );
+            taskid_writer_ = taskid;
+
         }
     }
 
