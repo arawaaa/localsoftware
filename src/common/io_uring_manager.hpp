@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fstream>
 #include <vector>
 #include <functional>
 #include <tuple>
@@ -11,6 +12,7 @@
 #include <queue>
 #include <liburing.h>
 #include <ranges>
+#include <functional>
 
 #include <openssl/ssl.h>
 #include <openssl/err.h>
@@ -18,6 +20,7 @@
 #include "io_event.hpp"
 #include "defs.hpp"
 
+#include <iostream>
 using namespace std;
 
 class IoUringManager {
@@ -32,21 +35,27 @@ public:
     IoUringManager(const IoUringManager&) = delete;
     IoUringManager& operator=(const IoUringManager&) = delete;
 
-    // Do not call queue any async functions in the constructor
+    // Do not queue any async functions in the constructor
     template <typename T, typename... Args>
     size_t initialize_dependent_event(IoEvent* parent, Args&&... args) {
         auto ev = make_shared<T>(std::forward<Args>(args)...);
         ev->uring_data_.outer_event = parent;
         for (auto [idx, shared_ptr] : views::enumerate(parent->uring_data_.events[type_index(typeid(T))])) {
             if (!shared_ptr) {
-                shared_ptr = std::move(ev);
+                parent->uring_data_.events[type_index(typeid(T))][idx] = ev;
                 ev->uring_data_.id = idx;
                 return idx;
             }
         }
-        parent->uring_data_.events[type_index(typeid(T))].emplace_back(std::move(ev));
+        parent->uring_data_.events[type_index(typeid(T))].emplace_back(ev);
         ev->uring_data_.id = parent->uring_data_.events[type_index(typeid(T))].size() - 1;
         return parent->uring_data_.events[type_index(typeid(T))].size() - 1;
+    }
+
+    template <typename T, typename... Args>
+    size_t initialize_root_event(Args&&... args) {
+        root_events_[type_index(typeid(T))].emplace_back(make_shared<T>(std::forward<Args>(args)...));
+        return root_events_[type_index(typeid(T))].size() - 1;
     }
 
     template <typename T>
@@ -61,6 +70,7 @@ public:
 
     template <typename T, typename Method, typename... Args>
     pair<uint64_t, bool> call_dependent_function(IoEvent* parent, int idx, Method method, Args&&... args) {
+        something_queued_ = true;
         uint64_t id = next_id_++;
         uint64_t old_running_id = running_id_;
         running_id_ = id;
@@ -69,7 +79,11 @@ public:
         CallResponse resp = (ev->*method)(id, std::forward<Args>(args)...);
         
         CallData& data = call_map_[id];
-        data.status = resp.success ? CallStatus::Running : CallStatus::Failed;
+        if (id != 0 && (data.status == CallStatus::Finished || data.status == CallStatus::Failed)) {
+            propagation_queue_.push(id);
+        } else {
+            data.status = resp.success ? CallStatus::Running : CallStatus::Failed;
+        }
         data.description = std::move(resp.description);
         data.op_hint = resp.op_hint;
         data.parent_task_id = old_running_id;
@@ -83,24 +97,52 @@ public:
         return {id, resp.success};
     }
 
+    template <typename T, typename Method, typename... Args>
+    pair<uint64_t, bool> call_root_function(int idx, Method method, Args&&... args) {
+        uint64_t id = next_id_++;
+        uint64_t old_running_id = running_id_;
+        running_id_ = id;
+
+        T* ev = static_cast<T*>(root_events_[type_index(typeid(T))][idx].get());
+        CallResponse resp = (ev->*method)(id, std::forward<Args>(args)...);
+
+        CallData& data = call_map_[id];
+        data.status = resp.success ? CallStatus::Running : CallStatus::Failed;
+        data.description = std::move(resp.description);
+        data.op_hint = resp.op_hint;
+        data.parent_task_id = 0;
+        data.event = ev;
+
+        running_id_ = old_running_id;
+        return {id, resp.success};
+    }
+
+    template <typename T>
+    void add_dependent_to_class(IoEvent* parent, IoEvent* source) {
+        auto s = parent->uring_data_.events[type_index(typeid(T))].size();
+        auto& vec = source->uring_data_.events[type_index(typeid(T))];
+        for_each(vec.begin(), vec.end(), [s] (shared_ptr<IoEvent>& ptr) {
+            ptr->uring_data_.id += s;
+        });
+        auto& pvec = parent->uring_data_.events[type_index(typeid(T))];
+        pvec.insert(pvec.end(), vec.begin(), vec.end());
+    }
+
+    CallData& get_call_data(uint64_t taskid) {
+        return call_map_[taskid];
+    }
+
     void finalize_current_task(bool failed, int return_code) {
+        something_queued_ = true;
         if (running_id_ == 0) return;
         auto& data = call_map_[running_id_];
+
         data.status = failed ? CallStatus::Failed : CallStatus::Finished;
         data.return_code = return_code;
     }
 
     void run(struct io_uring* ring) {
         while (true) {
-            // Process non-uring events
-            while (auto non_uring = dequeue_non_uring_event()) {
-                auto [op, res, ev, rid] = *non_uring;
-                uint64_t old_rid = running_id_;
-                running_id_ = rid; 
-                ev->on_new_data(op, IoUringResult{res});
-                running_id_ = old_rid;
-            }
-
             // Ensure pending submissions are sent
             submit_events(ring);
 
@@ -116,7 +158,6 @@ public:
 
             int i = 0;
             for (auto ptr = cqe; *ptr; ptr++) {
-                if (!*ptr) break;
                 EventData* data = reinterpret_cast<EventData*>(io_uring_cqe_get_data(*ptr));
                 if (data) {
                     IoEvent* ev = data->event;
@@ -125,13 +166,16 @@ public:
                     
                     uint64_t old_rid = running_id_;
                     running_id_ = rid;
+                    something_queued_ = false;
                     ev->on_new_data(op, IoUringResult{(*ptr)->res});
-                    
+                    if (!something_queued_) {
+                        ofs_ << "on_new_data failed to make action. Class: " << ev->get_info() << std::endl;
+                    }
+
                     if (rid != 0 && (call_map_[rid].status == CallStatus::Finished || call_map_[rid].status == CallStatus::Failed)) {
                         propagation_queue_.push(rid);
                     }
                     
-                    process_propagation_queue();
                     running_id_ = old_rid;
                     
                     delete data;
@@ -139,34 +183,32 @@ public:
                 i++;
             }
 
+            process_propagation_queue();
+
             io_uring_cq_advance(ring, i);
         }
     }
 
     template <typename F, typename... Args>
     void cache_call(IoEvent* ev, int op, F&& func, Args&&... args) {
+        something_queued_ = true;
         pending_events_.emplace_back(ev, op, running_id_, [f = std::forward<F>(func), ...args = std::forward<Args>(args)](struct io_uring_sqe* sqe) mutable {
             f(sqe, args...);
         });
     }
 
+    template <typename T>
+    void free_child_event_for_taskid(IoEvent* parent, uint64_t taskid) {
+        something_queued_ = true;
+        auto& calldata = call_map_[taskid];
+        parent->uring_data_.events[type_index(typeid(T))][calldata.event->uring_data_.id].reset();
+    }
+
     void consume_event(uint64_t taskid) {
-        call_map_.erase(taskid);
-    }
-
-    void add(int op, int res, IoEvent* ev) {
-        lock_guard<mutex> lock(non_uring_mutex_);
-        non_uring_events_.emplace_back(op | RequestID::FLAG_REDO_CACHED_DATA, res, ev, running_id_);
-    }
-
-    optional<tuple<int, int, IoEvent*, uint64_t>> dequeue_non_uring_event() {
-        lock_guard<mutex> lock(non_uring_mutex_);
-        if (non_uring_events_.empty()) {
-            return nullopt;
+        if (call_map_[taskid].parent_task_id != 0) {
+            call_map_[call_map_[taskid].parent_task_id].other_ids.erase(taskid);
         }
-        auto item = non_uring_events_.front();
-        non_uring_events_.pop_front();
-        return item;
+        call_map_.erase(taskid);
     }
 
     void submit_events(struct io_uring* ring) {
@@ -209,9 +251,13 @@ private:
                 uint64_t old_rid = running_id_;
                 running_id_ = parent_id;
                 
+                something_queued_ = false;
                 ChildTaskCompletion comp = {finished_id, it->second.status, it->second.return_code};
                 parent_entry.event->on_new_data(ID_DEFAULT, comp);
-                
+                if (!something_queued_) {
+                    ofs_ << "on_new_data failed to make action. Class: " << parent_entry.event->get_info() << std::endl;
+                }
+
                 if (parent_entry.status == CallStatus::Finished || parent_entry.status == CallStatus::Failed) {
                     propagation_queue_.push(parent_id);
                 }
@@ -222,6 +268,8 @@ private:
     }
 
     IoUringManager() {
+        ofs_ = std::ofstream{"/home/rapi/log.txt"};
+        ofs_ << "Start of file" << std::endl;
         tls_ctx_ = SSL_CTX_new(TLS_server_method());
         if (tls_ctx_ == NULL) {
             throw runtime_error{"Unable to create libssl context"};
@@ -254,12 +302,14 @@ private:
         SSL_CTX_free(tls_ctx_);
     }
 
+    bool something_queued_ = false;
+    std::ofstream ofs_;
+
     SSL_CTX* tls_ctx_;
     vector<tuple<IoEvent*, int, uint64_t, function<void(struct io_uring_sqe*)>>> pending_events_;
-    mutex non_uring_mutex_;
-    deque<tuple<int, int, IoEvent*, uint64_t>> non_uring_events_;
     uint64_t next_id_ = 1;
     uint64_t running_id_ = 0;
-    map<uint64_t, CallData> call_map_;
     queue<uint64_t> propagation_queue_;
+    map<uint64_t, CallData> call_map_;
+    map<type_index, vector<shared_ptr<IoEvent>>> root_events_;
 };

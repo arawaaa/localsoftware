@@ -16,7 +16,7 @@ public:
     AioLandingHTTP(shared_ptr<File> file, bool enable_tls, const HTTPManager& http_manager)
         : IoEvent(file), http_manager_(http_manager)
     {
-        IoUringManager::getInstance().initialize_dependent_event<InetSocketReadWriteEventHTTP>(this, std::move(file), enable_tls);
+        IoUringManager::getInstance().initialize_dependent_event<InetSocketReadWriteEventHTTP>(this, file, enable_tls);
     }
 
     CallResponse start(uint64_t) {
@@ -32,8 +32,7 @@ public:
     void on_new_data(int, EventType event) override {
         auto res = get<ChildTaskCompletion>(event);
         if (res.return_code <= 0) {
-            IoUringManager::getInstance().consume_event(res.task_id);
-            delete this;
+            IoUringManager::getInstance().finalize_current_task(true, -1);
             return;
         }
 
@@ -49,7 +48,7 @@ public:
                 );
                 op_read_ = false;
             } else {
-                delete this;
+                IoUringManager::getInstance().finalize_current_task(true, -1);
             }
         } else {
             // Continue reading

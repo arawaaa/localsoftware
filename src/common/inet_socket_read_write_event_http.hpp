@@ -41,12 +41,8 @@ public:
     CallResponse read_http(uint64_t) {
         read_op_ = true;
         parser_ = make_unique<http::request_parser<http::string_body>>();
-        if (buffer_.size() > 0) {
-            if (try_parse()) {
-                handle_read(0);
-            }
-        }
-        arm_read();
+
+        handle_read(0);
         return {"Read HTTP", true, OP_HINT_READ};
     }
 
@@ -55,6 +51,17 @@ public:
      */
     pair<GetDataInfo, unique_ptr<http::request_parser<http::string_body>>> get_data(uint64_t) {
         return {GetDataInfo {true}, std::move(parser_)};
+    }
+
+    /**
+     * @brief Queues a wakeup event, which then tells this class to add its readwriter classes to its parent
+     */
+    CallResponse move_to_parent(uint64_t, IoEvent* parent) {
+        if (tls_enabled_)
+            IoUringManager::getInstance().add_dependent_to_class<InetSocketTLSEvent>(parent, this);
+        else
+            IoUringManager::getInstance().add_dependent_to_class<InetSocketReadWriteEventBytes>(parent, this);
+        return {"Socket adaptor delegation", true, 0};
     }
 
     /**

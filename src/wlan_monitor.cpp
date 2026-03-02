@@ -154,13 +154,13 @@ void server_func() {
 
     // Setup HTTP Landing Accept Event
     auto http_file = make_shared<File>(http_fd);
-    auto* http_accept_ev = new AioLandingAcceptEvent(std::move(http_file), false, "/srv/landing");
-    http_accept_ev->prepare_accept();
+    auto res = IoUringManager::getInstance().initialize_root_event<AioLandingAcceptEvent>(std::move(http_file), false, "/srv/landing");
+    IoUringManager::getInstance().call_root_function<AioLandingAcceptEvent>(res, &AioLandingAcceptEvent::prepare_accept);
 
     // Setup HTTPS Landing Accept Event
     auto https_file = make_shared<File>(https_fd);
-    auto* https_accept_ev = new AioLandingAcceptEvent(std::move(https_file), true, "/srv/landing");
-    https_accept_ev->prepare_accept();
+    res = IoUringManager::getInstance().initialize_root_event<AioLandingAcceptEvent>(std::move(https_file), true, "/srv/landing");
+    IoUringManager::getInstance().call_root_function<AioLandingAcceptEvent>(res, &AioLandingAcceptEvent::prepare_accept);
 
     IoUringManager::getInstance().submit_events(&ring);
 
