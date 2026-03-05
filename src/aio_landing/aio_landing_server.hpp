@@ -13,7 +13,7 @@ using namespace std;
 
 class AioLandingHTTP : public IoEvent {
 public:
-    AioLandingHTTP(shared_ptr<File> file, bool enable_tls, const HTTPManager& http_manager)
+    AioLandingHTTP(vector<shared_ptr<File>> file, bool enable_tls, const HTTPManager& http_manager)
         : IoEvent(file), http_manager_(http_manager)
     {
         IoUringManager::getInstance().initialize_dependent_event<InetSocketReadWriteEventHTTP>(this, file, enable_tls);
@@ -62,7 +62,7 @@ public:
         IoUringManager::getInstance().consume_event(res.task_id);
     }
 
-    string get_info() const override { return "AioLandingHTTP FD " + to_string(file_->get()); }
+    string get_info() const override { return "AioLandingHTTP FD " + to_string(files_[0]->get()); }
 
 private:
     bool op_read_;

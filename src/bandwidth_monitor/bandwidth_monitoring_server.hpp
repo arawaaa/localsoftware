@@ -12,18 +12,18 @@
 #include <openssl/sha.h>
 
 #include "common/defs.hpp"
-#include "websocket_consumer_event.hpp"
 #include "common/io_event.hpp"
 #include "common/io_uring_manager.hpp"
-#include "bandwidth_data_write_event.hpp"
 #include "common/inet_socket_read_write_event_http.hpp"
 #include "common/http_manager.hpp"
 
-extern std::string base64_encode(const unsigned char *data, size_t input_length);
+using namespace std;
+
+extern string base64_encode(const unsigned char *data, size_t input_length);
 
 class BandwidthMonitoringServer : public IoEvent {
 public:
-    BandwidthMonitoringServer(std::shared_ptr<File> client_file, bool enable_tls, const HTTPManager& http_manager)
+    BandwidthMonitoringServer(vector<shared_ptr<File>> client_file, bool enable_tls, const HTTPManager& http_manager)
         : IoEvent(client_file), http_manager_(http_manager)
     {
         IoUringManager::getInstance().initialize_dependent_event<InetSocketReadWriteEventHTTP>(this, client_file, enable_tls);
@@ -110,7 +110,7 @@ public:
         }
     }
 
-    std::string get_info() const override { return "BandwidthDataReadEvent on FD " + std::to_string(file_->get()); }
+    std::string get_info() const override { return "BandwidthDataReadEvent on FD " + std::to_string(files_[0]->get()); }
 
 private:
     enum State {

@@ -9,10 +9,12 @@
 #include "../common/io_uring_manager.hpp"
 #include "bandwidth_monitoring_server.hpp"
 
+using namespace std;
+
 class BandwidthMonitorAcceptEvent : public IoEvent {
 public:
     // Takes ownership of the listening server socket file descriptor
-    BandwidthMonitorAcceptEvent(std::shared_ptr<File> server_file, bool enable_tls, const string& base_dir)
+    BandwidthMonitorAcceptEvent(vector<shared_ptr<File>> server_file, bool enable_tls, const string& base_dir)
         : IoEvent(server_file), enable_tls_(enable_tls), http_manager_(base_dir) {
         client_addr_len_ = sizeof(client_addr_);
     }
@@ -34,8 +36,8 @@ public:
                 char ip_str[INET_ADDRSTRLEN];
                 inet_ntop(AF_INET, &(client_addr_.sin_addr), ip_str, INET_ADDRSTRLEN);
                 cout << "[MONITOR" << (enable_tls_ ? " TLS" : "") <<"] Accept with " << ip_str << ":" << client_addr_.sin_port << endl;
-                auto client_file = make_shared<File>(res);
-                int idx = IoUringManager::getInstance().initialize_dependent_event<BandwidthMonitoringServer>(this, std::move(client_file), enable_tls_, http_manager_);
+                auto client_file = vector<shared_ptr<File>>{make_shared<File>(res)};
+                int idx = IoUringManager::getInstance().initialize_dependent_event<BandwidthMonitoringServer>(this, client_file, enable_tls_, http_manager_);
                 IoUringManager::getInstance().call_dependent_function<BandwidthMonitoringServer>(
                     this,
                     idx,
@@ -48,12 +50,12 @@ public:
     }
 
     std::string get_info() const override {
-        return "BandwidthMonitorAcceptEvent on FD " + std::to_string(file_->get());
+        return "BandwidthMonitorAcceptEvent on FD " + std::to_string(files_[0]->get());
     }
 
 private:
     void queue_accept() {
-        IoUringManager::getInstance().cache_call(this, ID_DEFAULT, io_uring_prep_accept, file_->get(),
+        IoUringManager::getInstance().cache_call(this, ID_DEFAULT, io_uring_prep_accept, files_[0]->get(),
                          reinterpret_cast<struct sockaddr*>(&client_addr_),
                          &client_addr_len_, 0);
     }

@@ -17,8 +17,6 @@
 
 #include "common/io_uring_manager.hpp"
 #include "bandwidth_monitor/accept_event.hpp"
-#include "bandwidth_monitor/bandwidth_data_read_event.hpp"
-#include "bandwidth_monitor/bandwidth_data_write_event.hpp"
 #include "aio_landing/aio_landing_accepter.hpp"
 
 using namespace std;
@@ -82,6 +80,48 @@ void log_entry(time_t ts, int d, int m, int y, int h, unsigned long long tx, uns
           << y << " " << h << " " << tx << " " << rx << "\n";
     }
 }
+int setup_server_socket6(int port) {
+    int server_fd;
+    struct sockaddr_in6 address{
+        .sin6_family = AF_INET6,
+        .sin6_port = htons(port),
+        .sin6_flowinfo = 0,
+        .sin6_addr = IN6ADDR_ANY_INIT,
+        .sin6_scope_id = 0
+    };
+    int opt = 1;
+
+    if ((server_fd = socket(AF_INET6, SOCK_STREAM, 0)) == 0) {
+        perror("socket failed");
+        return -1;
+    }
+
+    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt))) {
+        perror("setsockopt");
+        close(server_fd);
+        return -1;
+    }
+
+    if (setsockopt(server_fd, IPPROTO_IPV6, IPV6_V6ONLY, &opt, sizeof(opt))) {
+        perror("setsockopt");
+        close(server_fd);
+        return -1;
+    }
+
+    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
+        perror("bind failed");
+        std::cout << port << std::endl;
+        close(server_fd);
+        return -1;
+    }
+
+    if (listen(server_fd, 10) < 0) {
+        perror("listen");
+        close(server_fd);
+        return -1;
+    }
+    return server_fd;
+}
 
 int setup_server_socket(int port) {
     int server_fd;
@@ -121,14 +161,31 @@ void server_func() {
     int ws_fd = setup_server_socket(SERVER_PORT);
     if (ws_fd < 0) return;
 
+    int http6_fd = setup_server_socket6(HTTP_PORT);
+    if (http6_fd < 0) {
+        close(ws_fd);
+        return;
+    }
+
     int http_fd = setup_server_socket(HTTP_PORT);
     if (http_fd < 0) {
+        close(http6_fd);
         close(ws_fd);
         return;
     }
 
     int https_fd = setup_server_socket(HTTPS_PORT);
     if (https_fd < 0) {
+        close(http6_fd);
+        close(http_fd);
+        close(ws_fd);
+        return;
+    }
+
+    int https6_fd = setup_server_socket6(HTTPS_PORT);
+    if (https_fd < 0) {
+        close(https_fd);
+        close(http6_fd);
         close(http_fd);
         close(ws_fd);
         return;
@@ -150,17 +207,17 @@ void server_func() {
     auto& instance = IoUringManager::getInstance();
     // Setup WebSocket Accept Event
     auto ws_file = make_shared<File>(ws_fd);
-    auto res = instance.initialize_root_event<BandwidthMonitorAcceptEvent>(std::move(ws_file), false, "/srv/bwith");
+    auto res = instance.initialize_root_event<BandwidthMonitorAcceptEvent>(vector<shared_ptr<File>>{ws_file}, false, "/srv/bwith");
     instance.call_root_function<BandwidthMonitorAcceptEvent>(res, &BandwidthMonitorAcceptEvent::prepare_accept);
 
     // Setup HTTP Landing Accept Event
-    auto http_file = make_shared<File>(http_fd);
-    res = instance.initialize_root_event<AioLandingAcceptEvent>(std::move(http_file), false, "/srv/landing");
+    vector<shared_ptr<File>> http_files = {make_shared<File>(http_fd), make_shared<File>(http6_fd)};
+    res = instance.initialize_root_event<AioLandingAcceptEvent>(http_files, false, "/srv/landing");
     instance.call_root_function<AioLandingAcceptEvent>(res, &AioLandingAcceptEvent::prepare_accept);
 
     // Setup HTTPS Landing Accept Event
-    auto https_file = make_shared<File>(https_fd);
-    res = instance.initialize_root_event<AioLandingAcceptEvent>(std::move(https_file), true, "/srv/landing");
+    vector<shared_ptr<File>> https_files = {make_shared<File>(https_fd), make_shared<File>(https6_fd)};
+    res = instance.initialize_root_event<AioLandingAcceptEvent>(https_files, true, "/srv/landing");
     instance.call_root_function<AioLandingAcceptEvent>(res, &AioLandingAcceptEvent::prepare_accept);
 
     instance.submit_events(&ring);

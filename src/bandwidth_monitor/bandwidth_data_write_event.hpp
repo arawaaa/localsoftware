@@ -118,7 +118,7 @@ public:
         }
     }
 
-    std::string get_info() const override { return "BandwidthDataWriteEvent on FD " + std::to_string(file_->get()); }
+    std::string get_info() const override { return "BandwidthDataWriteEvent on FD " + std::to_string(file_[0]->get()); }
 
 private:
     std::string response_;

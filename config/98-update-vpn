@@ -1,0 +1,19 @@
+#!/bin/bash
+
+INTERFACE=$1
+ACTION=$2
+
+if [ "$INTERFACE" = "wg0" ] && [[ "$ACTION" = "vpn-up" ]]; then
+    ip rule add from 10.0.0.2 table 200
+    ip -6 rule add from fd00:b00b:b00b::2 table 200
+    ip route add default dev wg0 table 200
+    ip -6 route add default dev wg0 table 200
+fi
+
+if [ "$INTERFACE" = "wg0" ] && [[ "$ACTION" = "vpn-down" ]]; then
+    ip rule del from 10.0.0.2 table 200
+    ip -6 rule del from fd00:b00b:b00b::2 table 200
+    ip route del default dev wg0 table 200
+    ip -6 route del default dev wg0 table 200
+fi
+d

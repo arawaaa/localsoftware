@@ -21,7 +21,7 @@ namespace http = boost::beast::http;
  */
 class WebsocketEvent : public IoEvent {
 public:
-    WebsocketEvent(shared_ptr<File> file, bool tls_enabled = false)
+    WebsocketEvent(vector<shared_ptr<File>> file, bool tls_enabled = false)
         : IoEvent(file), tls_enabled_(tls_enabled)
     {
         /* Child Events must be moved from another event class, like the HTTP class */
@@ -31,7 +31,7 @@ public:
      * @brief Serializes an HTTP response into the write buffer and starts the write process.
      */
     CallResponse write_frame(char* buf, size_t len) {
-        size_t size = 2 + (len > numeric_limits<uint8_t>::max() ? (len > numeric_limits<uint16_t>::max() ? ): 1);
+        size_t size = 2 + (len > numeric_limits<uint8_t>::max() ? (len > numeric_limits<uint16_t>::max() ? 9 : 3): 1);
         std::string frame;
         frame.push_back(static_cast<char>(0x82)); // FIN + Binary
         if (len <= 125) {
@@ -41,7 +41,7 @@ public:
             frame.push_back(static_cast<char>((len >> 8) & 0xFF));
             frame.push_back(static_cast<char>(len & 0xFF));
         }
-        frame.append(reinterpret_cast<const char*>(data), len);
+        frame.append(reinterpret_cast<const char*>(buf), len);
 
         arm_write();
         return {"Websocket Write", true, OP_HINT_WRITE};
@@ -58,7 +58,7 @@ public:
             return;
         }
 
-        handle_write(res);
+        handle_write(res.return_code);
         IoUringManager::getInstance().consume_event(res.task_id);
     }
 
@@ -73,19 +73,10 @@ protected:
     bool tls_enabled_;
 
     void handle_write(int res) {
-        if (res > 0) {
-            write_buffer_.consume(res);
-        }
-
-        if (write_buffer_.size() > 0) {
-            arm_write();
-            return;
-        }
         IoUringManager::getInstance().finalize_current_task(false, 1);
     }
 
-    void arm_write() {
-        if (write_buffer_.size() == 0) return;
+    void arm_write() {/*
         if (tls_enabled_) {
             auto [taskid, success] = IoUringManager::getInstance().call_dependent_function<InetSocketTLSEvent>(
                 this,
@@ -105,20 +96,7 @@ protected:
             );
             taskid_writer_ = taskid;
 
-        }
-    }
-
-    bool try_parse() {
-        boost::system::error_code ec;
-        size_t consumed = parser_->put(buffer_.data(), ec);
-        buffer_.consume(consumed);
-
-        if (ec && ec != http::error::need_more) {
-            // Treat parse errors as "done" so the caller can handle the error state in the parser
-            return true;
-        }
-
-        return parser_->is_done();
+        }*/
     }
 };
 

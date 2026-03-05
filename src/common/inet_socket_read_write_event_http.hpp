@@ -21,7 +21,7 @@ namespace http = boost::beast::http;
  */
 class InetSocketReadWriteEventHTTP : public IoEvent {
 public:
-    InetSocketReadWriteEventHTTP(shared_ptr<File> file, bool use_ssl = false)
+    InetSocketReadWriteEventHTTP(vector<shared_ptr<File>> file, bool use_ssl = false)
         : IoEvent(file), tls_enabled_(use_ssl)
     {
         if (tls_enabled_)

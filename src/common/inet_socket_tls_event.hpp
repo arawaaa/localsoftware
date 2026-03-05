@@ -14,16 +14,17 @@
 #define MAXFRAMELENGTH (size_t)16384
 #define MAXUFRAMELENGTH (size_t)(16384 - 1024) // little bit of margin
 
+using namespace std;
 /**
  * @brief Base implementation for HTTP socket reading using Boost.Beast parsers.
  */
 class InetSocketTLSEvent : public IoEvent {
 public:
-    InetSocketTLSEvent(std::shared_ptr<File> file)
+    InetSocketTLSEvent(vector<shared_ptr<File>> file)
         : IoEvent(file)
     {
         if ((ssl_ = SSL_new(IoUringManager::getInstance().get_tls_ctx())) == NULL) {
-            throw std::runtime_error{"Failed to create ssl object"};
+            throw runtime_error{"Failed to create ssl object"};
         }
 
         IoUringManager::getInstance().initialize_dependent_event<InetSocketReadWriteEventBytes>(this, file);
@@ -63,7 +64,7 @@ public:
      * @brief Handle the completion queue entry (CQE) result.
      */
     void on_new_data(int, EventType event) override {
-        auto res = std::get<ChildTaskCompletion>(event);
+        auto res = get<ChildTaskCompletion>(event);
         if (res.return_code <= 0) {
             IoUringManager::getInstance().finalize_current_task(true, res.return_code);
             IoUringManager::getInstance().consume_event(res.task_id);
@@ -78,7 +79,7 @@ public:
         IoUringManager::getInstance().consume_event(res.task_id);
     }
 
-    std::string get_info() const override {
+    string get_info() const override {
         return "TLS socket adaptor";
     }
 
@@ -155,7 +156,7 @@ protected:
         if (res < 0) return IoUringManager::getInstance().finalize_current_task(true, res);
 
         size_t numread = 0;
-        int ret = SSL_write_ex(ssl_, u_write_ + u_write_p_, std::min(u_writelen_ - u_write_p_, MAXUFRAMELENGTH), &numread);
+        int ret = SSL_write_ex(ssl_, u_write_ + u_write_p_, min(u_writelen_ - u_write_p_, MAXUFRAMELENGTH), &numread);
         u_write_p_ += numread;
 
         switch (SSL_get_error(ssl_, ret)) {

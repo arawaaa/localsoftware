@@ -25,7 +25,7 @@ struct IoUringData {
  */
 class IoEvent {
 public:
-    explicit IoEvent(shared_ptr<File> file) : file_(file) {}
+    explicit IoEvent(vector<shared_ptr<File>> file) : files_(file) {}
 
     IoEvent() {}
 
@@ -41,7 +41,7 @@ public:
     IoUringData uring_data_;
 
 protected:
-    shared_ptr<File> file_ = nullptr;
+    vector<shared_ptr<File>> files_;
 };
 
 inline IoEvent::~IoEvent() = default;
