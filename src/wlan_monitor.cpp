@@ -147,24 +147,25 @@ void server_func() {
         return;
     }
 
+    auto& instance = IoUringManager::getInstance();
     // Setup WebSocket Accept Event
     auto ws_file = make_shared<File>(ws_fd);
-    auto* ws_accept_ev = new BandwidthMonitorAcceptEvent(std::move(ws_file));
-    ws_accept_ev->prepare_accept();
+    auto res = instance.initialize_root_event<BandwidthMonitorAcceptEvent>(std::move(ws_file), false, "/srv/bwith");
+    instance.call_root_function<BandwidthMonitorAcceptEvent>(res, &BandwidthMonitorAcceptEvent::prepare_accept);
 
     // Setup HTTP Landing Accept Event
     auto http_file = make_shared<File>(http_fd);
-    auto res = IoUringManager::getInstance().initialize_root_event<AioLandingAcceptEvent>(std::move(http_file), false, "/srv/landing");
-    IoUringManager::getInstance().call_root_function<AioLandingAcceptEvent>(res, &AioLandingAcceptEvent::prepare_accept);
+    res = instance.initialize_root_event<AioLandingAcceptEvent>(std::move(http_file), false, "/srv/landing");
+    instance.call_root_function<AioLandingAcceptEvent>(res, &AioLandingAcceptEvent::prepare_accept);
 
     // Setup HTTPS Landing Accept Event
     auto https_file = make_shared<File>(https_fd);
-    res = IoUringManager::getInstance().initialize_root_event<AioLandingAcceptEvent>(std::move(https_file), true, "/srv/landing");
-    IoUringManager::getInstance().call_root_function<AioLandingAcceptEvent>(res, &AioLandingAcceptEvent::prepare_accept);
+    res = instance.initialize_root_event<AioLandingAcceptEvent>(std::move(https_file), true, "/srv/landing");
+    instance.call_root_function<AioLandingAcceptEvent>(res, &AioLandingAcceptEvent::prepare_accept);
 
-    IoUringManager::getInstance().submit_events(&ring);
+    instance.submit_events(&ring);
 
-    IoUringManager::getInstance().run(&ring);
+    instance.run(&ring);
 
     io_uring_queue_exit(&ring);
 }

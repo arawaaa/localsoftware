@@ -76,18 +76,21 @@ public:
         running_id_ = id;
         
         T* ev = static_cast<T*>(parent->uring_data_.events[type_index(typeid(T))][idx].get());
+
+        CallData& data = call_map_[id];
+        data.status = CallStatus::Running;
+        data.event = ev;
+        data.parent_task_id = old_running_id;
+
         CallResponse resp = (ev->*method)(id, std::forward<Args>(args)...);
         
-        CallData& data = call_map_[id];
         if (id != 0 && (data.status == CallStatus::Finished || data.status == CallStatus::Failed)) {
             propagation_queue_.push(id);
-        } else {
-            data.status = resp.success ? CallStatus::Running : CallStatus::Failed;
+        } else if (!resp.success) {
+            data.status = CallStatus::Failed;
         }
         data.description = std::move(resp.description);
         data.op_hint = resp.op_hint;
-        data.parent_task_id = old_running_id;
-        data.event = ev;
         
         if (old_running_id != 0) {
             call_map_[old_running_id].event = parent;
@@ -117,15 +120,19 @@ public:
         return {id, resp.success};
     }
 
-    template <typename T>
-    void add_dependent_to_class(IoEvent* parent, IoEvent* source) {
-        auto s = parent->uring_data_.events[type_index(typeid(T))].size();
-        auto& vec = source->uring_data_.events[type_index(typeid(T))];
-        for_each(vec.begin(), vec.end(), [s] (shared_ptr<IoEvent>& ptr) {
+    // T1 and T2 *must* be distinct and they must both be initialized. T1 must have the specified type, and indices must be valid
+    template <typename T1_from, typename T2_to, typename SubEvent>
+    void move_subevents(IoEvent* parent, size_t idx1, size_t idx2) {
+        auto source = parent->uring_data_.events[type_index(typeid(T1_from))][idx1];
+        auto to = parent->uring_data_.events[type_index(typeid(T2_to))][idx2];
+        auto& svec = source->uring_data_.events[type_index(typeid(SubEvent))];
+        auto& dvec = to->uring_data_.events[type_index(typeid(SubEvent))];
+        auto s = to->uring_data_.events[type_index(typeid(SubEvent))].size();
+        for_each(svec.begin(), svec.end(), [s] (shared_ptr<IoEvent>& ptr) {
             ptr->uring_data_.id += s;
         });
-        auto& pvec = parent->uring_data_.events[type_index(typeid(T))];
-        pvec.insert(pvec.end(), vec.begin(), vec.end());
+        dvec.insert(dvec.end(), svec.begin(), svec.end());
+        source->uring_data_.events[type_index(typeid(SubEvent))].clear();
     }
 
     CallData& get_call_data(uint64_t taskid) {

@@ -54,17 +54,6 @@ public:
     }
 
     /**
-     * @brief Queues a wakeup event, which then tells this class to add its readwriter classes to its parent
-     */
-    CallResponse move_to_parent(uint64_t, IoEvent* parent) {
-        if (tls_enabled_)
-            IoUringManager::getInstance().add_dependent_to_class<InetSocketTLSEvent>(parent, this);
-        else
-            IoUringManager::getInstance().add_dependent_to_class<InetSocketReadWriteEventBytes>(parent, this);
-        return {"Socket adaptor delegation", true, 0};
-    }
-
-    /**
      * @brief Serializes an HTTP response into the write buffer and starts the write process.
      */
     CallResponse write_http(uint64_t, http::response<http::string_body> res) {

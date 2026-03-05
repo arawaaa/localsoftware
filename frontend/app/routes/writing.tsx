@@ -2,14 +2,20 @@ import { Container, Typography, Grid, Card, CardContent, Button } from '@mui/mat
 
 const writings = [
   {
+    title: 'Note on Efficacy of ML and Beautiful Algos',
+    description: "A short note on how ML and gradient descent can exploit low-dimensional manifolds to solve very difficult problems, in many cases, converge to very clean representations (i.e. very few to no heuristics) with high accuracy and speed. Does this imply that, e.x. object recognition, CFD can have clean, beautiful, non-neural algorithms as well? What does this imply about the existence of low-dimensional structure in almost everything? Are the learned algorithms even comprehensible, or are they going to remain as indecipherable matrices of floating point numbers?",
+    link: '/BeautifulAlgo.pdf',
+    date: 'March 3 2026'
+  },
+  {
     title: 'On Technological Progress',
-      description: "Why does recent technological progress seem awful, despite incredible developments to the contrary? What is the nature of technological progress? How does disruption reset our outlook on the future and possibly give us renewed hope?",
+    description: "Why does recent technological progress seem awful, despite incredible developments to the contrary? What is the nature of technological progress? How does disruption reset our outlook on the future and possibly give us renewed hope?",
     link: '/TechProgress.pdf',
     date: 'February 24 2026'
   },
   {
     title: 'The Value of Voluntary Effort',
-      description: "Explores why voluntary effort for creativity, careful thinking and problem solving are still so important, even if something can do them better. Individual understanding, learning and exercise of the imagination (creativity) are the primary reason to do things.",
+    description: "Explores why voluntary effort for creativity, careful thinking and problem solving are still so important, even if something can do them better. Individual understanding, learning and exercise of the imagination (creativity) are the primary reason to do things.",
     link: '/Voluntary.pdf',
     date: 'February 2026'
   },

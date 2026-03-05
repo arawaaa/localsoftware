@@ -1,0 +1,13 @@
+[Unit]
+Description=Policy Routing for WireGuard wg0
+After=wg-quick@wg0.service
+Requires=wg-quick@wg0.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/bash -c "ip rule add from 10.0.0.2 table 200; ip route add default dev wg0 table 200; /usr/sbin/nft add rule ip filter input iifname 'wg0' accept; echo 2 > /proc/sys/net/ipv4/conf/all/rp_filter; echo 2 > /proc/sys/net/ipv4/conf/wg0/rp_filter"
+ExecStop=/usr/bin/bash -c "ip rule del from 10.0.0.2 table 200; ip route del default dev wg0 table 200; /usr/sbin/nft delete rule ip filter input iifname 'wg0' accept; echo 1 > /proc/sys/net/ipv4/conf/all/rp_filter"
+
+[Install]
+WantedBy=multi-user.target
