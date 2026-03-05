@@ -16,7 +16,7 @@ if [ "$INTERFACE" = "wlan0" ] && [[ "$ACTION" =~ ^(up|dhcp4-change)$ ]]; then
         ETH_IP=""
         
         # Start checking from .222 downwards, avoid current wlan0 IP
-        for i in {222..218}; do
+        for i in {254..1}; do
             TEST_IP="$BASE_IP.$i"
             
             # Skip if it matches our own wlan0 IP
@@ -31,16 +31,12 @@ if [ "$INTERFACE" = "wlan0" ] && [[ "$ACTION" =~ ^(up|dhcp4-change)$ ]]; then
             fi
         done
         
-        # Fallback if all checks fail (unlikely)
+        # Fail if all checks fail
         if [ -z "$ETH_IP" ]; then
-             ETH_IP="$BASE_IP.222"
-             if [ "$IP_ADDR" = "$ETH_IP" ]; then
-                ETH_IP="$BASE_IP.221"
-             fi
+             exit
         fi
 
         # 1. Ensure eth0 is up and has its unique IP before starting services
-        ip link set eth0 up
         ip addr flush dev eth0 scope global
         ip addr add "$ETH_IP/32" dev eth0
         
