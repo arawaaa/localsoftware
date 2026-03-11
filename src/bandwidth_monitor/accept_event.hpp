@@ -33,9 +33,9 @@ public:
         } else {
             int res = get<IoUringResult>(event).res;
             if (res >= 0) {
-                char ip_str[INET_ADDRSTRLEN];
-                inet_ntop(AF_INET, &(client_addr_.sin_addr), ip_str, INET_ADDRSTRLEN);
-                cout << "[MONITOR" << (enable_tls_ ? " TLS" : "") <<"] Accept with [" << ip_str << "]:" << client_addr_.sin_port << endl;
+                char ip_str[INET6_ADDRSTRLEN];
+                inet_ntop(AF_INET6, &(client_addr_.sin6_addr), ip_str, INET_ADDRSTRLEN);
+                cout << "[MONITOR" << (enable_tls_ ? " TLS" : "") <<"] Accept with [" << ip_str << "]:" << client_addr_.sin6_port << endl;
                 auto client_file = vector<shared_ptr<File>>{make_shared<File>(res)};
                 int idx = IoUringManager::getInstance().initialize_dependent_event<BandwidthMonitoringServer>(this, client_file, enable_tls_, http_manager_);
                 IoUringManager::getInstance().call_dependent_function<BandwidthMonitoringServer>(
@@ -62,6 +62,6 @@ private:
 
     HTTPManager http_manager_;
     bool enable_tls_;
-    struct sockaddr_in client_addr_{};
+    struct sockaddr_in6 client_addr_{};
     socklen_t client_addr_len_;
 };

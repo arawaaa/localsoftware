@@ -18,6 +18,7 @@
 #include "common/io_uring_manager.hpp"
 #include "bandwidth_monitor/accept_event.hpp"
 #include "aio_landing/aio_landing_accepter.hpp"
+#include "reverse_proxy/reverse_proxy_accept.hpp"
 
 using namespace std;
 
@@ -26,7 +27,8 @@ const string INTERFACE = "wlan0";
 const string RX_FILE = "/sys/class/net/" + INTERFACE + "/statistics/rx_bytes";
 const string TX_FILE = "/sys/class/net/" + INTERFACE + "/statistics/tx_bytes";
 const string LOG_FILE = "/var/log/wlan_monitor/wlan_usage.log";
-constexpr int SERVER_PORT = 8888;
+constexpr int SERVER_PORT = 8443;
+constexpr int RP_PORT = 18789;
 constexpr int HTTP_PORT = 80;
 constexpr int HTTPS_PORT = 443;
 
@@ -158,7 +160,8 @@ int setup_server_socket(int port) {
 }
 
 void server_func() {
-    int ws_fd = setup_server_socket(SERVER_PORT);
+    // Single stack IPv6 for all surfaces outside of homepage, which is dual-stack
+    int ws_fd = setup_server_socket6(SERVER_PORT);
     if (ws_fd < 0) return;
 
     int http6_fd = setup_server_socket6(HTTP_PORT);
@@ -191,9 +194,19 @@ void server_func() {
         return;
     }
 
-    cout << "io_uring WebSocket Server listening on port " << SERVER_PORT << endl;
-    cout << "io_uring HTTP Landing Server listening on port " << HTTP_PORT << endl;
-    cout << "io_uring HTTPS Landing Server listening on port " << HTTPS_PORT << endl;
+    int rphttps_fd = setup_server_socket(RP_PORT);
+    if (rphttps_fd < 0) {
+        close(http6_fd);
+        close(https_fd);
+        close(http6_fd);
+        close(http_fd);
+        close(ws_fd);
+    }
+
+    cout << "HTTP Bandwidth data server listening on port " << SERVER_PORT << endl;
+    cout << "HTTP Landing Server listening on port " << HTTP_PORT << endl;
+    cout << "HTTPS Landing Server listening on port " << HTTPS_PORT << endl;
+    cout << "HTTPS Reverse Proxy listening on port " << RP_PORT << endl;
 
     // Initialize io_uring
     struct io_uring ring;
@@ -207,7 +220,7 @@ void server_func() {
     auto& instance = IoUringManager::getInstance();
     // Setup WebSocket Accept Event
     auto ws_file = make_shared<File>(ws_fd);
-    auto res = instance.initialize_root_event<BandwidthMonitorAcceptEvent>(vector<shared_ptr<File>>{ws_file}, false, "/srv/bwith");
+    auto res = instance.initialize_root_event<BandwidthMonitorAcceptEvent>(vector<shared_ptr<File>>{ws_file}, true, "/srv/bwith");
     instance.call_root_function<BandwidthMonitorAcceptEvent>(res, &BandwidthMonitorAcceptEvent::prepare_accept);
 
     // Setup HTTP Landing Accept Event
@@ -219,6 +232,10 @@ void server_func() {
     vector<shared_ptr<File>> https_files = {make_shared<File>(https_fd), make_shared<File>(https6_fd)};
     res = instance.initialize_root_event<AioLandingAcceptEvent>(https_files, true, "/srv/landing");
     instance.call_root_function<AioLandingAcceptEvent>(res, &AioLandingAcceptEvent::prepare_accept);
+
+    vector<shared_ptr<File>> rp_files = {make_shared<File>(rphttps_fd)};
+    res = instance.initialize_root_event<ReverseProxyAccept>(rp_files, "/srv/rp");
+    instance.call_root_function<ReverseProxyAccept>(res, &ReverseProxyAccept::prepare_accept);
 
     instance.submit_events(&ring);
 

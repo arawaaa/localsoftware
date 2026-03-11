@@ -9,14 +9,31 @@
 #include "common/io_uring_manager.hpp"
 #include "common/http_manager.hpp"
 #include "reverse_proxy_server.hpp"
+#include "common/reverse_proxy_manager.hpp"
 
 using namespace std;
+constexpr string password = "arnavopenclaw";
 
-class OpenClawAccept : public IoEvent {
+class ReverseProxyAccept : public IoEvent {
 public:
     // Takes ownership of the listening server socket file descriptor
-    OpenClawAccept(vector<shared_ptr<File>> server_file, const string& base_dir)
-        : IoEvent(server_file), http_manager_(base_dir) {
+    ReverseProxyAccept(vector<shared_ptr<File>> server_file, const string& base_dir)
+        : IoEvent(server_file), http_manager_(base_dir) \
+    {
+        auto keep_alive_headers = vector<pair<http::field, string>>{
+            {http::field::content_type, "text/plain"},
+            {http::field::connection, "keep-alive"}
+        };
+
+        http_manager_.add_endpoint("/login", [keep_alive_headers](const auto& req) {
+            if (req.method() != http::verb::post) {
+                return HTTPManager::prepare_response(keep_alive_headers, http::status::method_not_allowed, "");
+            } else if (req.body() != password) {
+                return HTTPManager::prepare_response(keep_alive_headers, http::status::forbidden, "");
+            } else {
+                return HTTPManager::prepare_response(keep_alive_headers, http::status::ok, "");
+            }
+        });
         client_addr_len_ = sizeof(client_addr_);
     }
 
@@ -62,6 +79,7 @@ private:
     }
 
     HTTPManager http_manager_;
+    ReverseProxyManager proxy_manager_;
     string proxyto_;
     int proxyport_;
     struct sockaddr_in client_addr_{};

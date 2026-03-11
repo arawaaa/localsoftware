@@ -3,14 +3,27 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WLAN Traffic Monitor</title>
+    <title>OpenClaw Reverse Proxy Authentication</title>
     <style>
+        body { font-family: 'sans-serif'; }
         #header { max-width: 1000px; margin: 0 auto; }
     </style>
+    <script>
+        document.getElementById("auth").onclick = function() {
+            const request = new Request("/login", { method: "POST", body: document.getElementById("password").value })
+            fetch("/login", request)
+        }
+    </script>
 </head>
 <body>
     <div id="header">
         <h1>OpenClaw Login</h1>
         <p>Reverse proxied to internal instance</p>
+        <label for="password">Password:</label>
+        <input type="password" id="password" name="password" required />
+        <button id="auth">Authenticate</button>
+        <br>
+        <p>Powered by my asynchronous IO server. All services on this domain are served by the same process.</p>
+        <a href="www.github.com/arawaaa/localsoftware">Github</a>
     </div>
 </html>
