@@ -1,7 +1,8 @@
 #pragma once
 
+#include <cstdint>
+#include <limits>
 #include <memory>
-#include <utility>
 
 #include <boost/beast/http.hpp>
 #include <boost/beast/core/flat_buffer.hpp>
@@ -14,34 +15,51 @@
 #include "defs.hpp"
 
 using namespace std;
-namespace http = boost::beast::http;
 
 /**
  * @brief Base implementation for HTTP socket reading using Boost.Beast parsers.
  */
 class WebsocketEvent : public IoEvent {
 public:
-    WebsocketEvent(vector<shared_ptr<File>> file, bool tls_enabled = false)
-        : IoEvent(file), tls_enabled_(tls_enabled)
+    WebsocketEvent(bool tls_enabled = false)
+        : tls_enabled_(tls_enabled)
     {
-        /* Child Events must be moved from another event class, like the HTTP class */
+        /* Child Events must be moved from the http class, since a websocket conn must be started from a http context */
     }
 
+    virtual ~WebsocketEvent() {
+        delete[] w_buf_;
+    }
     /**
      * @brief Serializes an HTTP response into the write buffer and starts the write process.
      */
-    CallResponse write_frame(char* buf, size_t len) {
-        size_t size = 2 + (len > numeric_limits<uint8_t>::max() ? (len > numeric_limits<uint16_t>::max() ? 9 : 3): 1);
-        std::string frame;
-        frame.push_back(static_cast<char>(0x82)); // FIN + Binary
+    CallResponse write_frame(uint64_t, char* buf, size_t len) {
+        w_len_ = 2 + (len > 125 ? (len > numeric_limits<uint16_t>::max() ? 8 : 2): 0) + len;
+        w_buf_ = new char[w_len_];
+        w_buf_[0] = OpHeader::FIN | OpHeader::Binary;
+        size_t idx = 2;
         if (len <= 125) {
-            frame.push_back(static_cast<char>(len));
+            w_buf_[1] = (0x0 << 7) | len;
+        } else if (len <= numeric_limits<uint16_t>::max()) {
+            w_buf_[1] = (0x0 << 7) | 0x7E;
+            // Big endian format
+            w_buf_[2] = len >> 8 & 0xFF;
+            w_buf_[3] = len & 0xFF;
+            idx = 4;
         } else {
-            frame.push_back(126);
-            frame.push_back(static_cast<char>((len >> 8) & 0xFF));
-            frame.push_back(static_cast<char>(len & 0xFF));
+            w_buf_[1] = (0x0 << 7) | 0x7F;
+            w_buf_[2] = 0;
+            w_buf_[3] = 0;
+            w_buf_[4] = 0;
+            w_buf_[5] = 0;
+            w_buf_[6] = len >> 24 & 0xFF;
+            w_buf_[7] = len >> 16 & 0xFF;
+            w_buf_[8] = len >> 8 & 0xFF;
+            w_buf_[9] = len & 0xFF;
+            idx = 10;
         }
-        frame.append(reinterpret_cast<const char*>(buf), len);
+
+        memcpy(w_buf_ + idx, buf, len);
 
         arm_write();
         return {"Websocket Write", true, OP_HINT_WRITE};
@@ -54,12 +72,12 @@ public:
         auto res = get<ChildTaskCompletion>(event);
         if (res.return_code <= 0) {
             IoUringManager::getInstance().finalize_current_task(true, res.return_code);
-            IoUringManager::getInstance().consume_event(res.task_id);
             return;
         }
 
-        handle_write(res.return_code);
-        IoUringManager::getInstance().consume_event(res.task_id);
+        delete[] w_buf_;
+        w_buf_ = nullptr;
+        IoUringManager::getInstance().finalize_current_task(false, res.return_code);
     }
 
     string get_info() const override {
@@ -67,23 +85,51 @@ public:
     }
 
 protected:
+    char* w_buf_ = nullptr;
+    size_t w_len_;
     bool read_op_;
     uint64_t taskid_writer_, taskid_reader_;
 
+    enum OpHeader {
+        // OR this with the opcode
+        FIN = 0x8 << 4,
+        RSV1 = 0x4 << 4,
+        RSV2 = 0x2 << 4,
+        RSV3 = 0x1 << 4,
+
+        // Opcodes
+        Continuation = 0,
+        // Non-control frames
+        Text = 1,
+        Binary = 2,
+        // 3-7 reserved for further non-control frames
+        NoncontrolExtra1 = 3,
+        NoncontrolExtra2,
+        NoncontrolExtra3,
+        NoncontrolExtra4,
+        NoncontrolExtra5,
+        // Control Frames
+        Close = 8,
+        Ping = 9,
+        Pong = 10,
+        // 11-15 reserved for further control frames
+        ControlExtra1 = 11,
+        ControlExtra2,
+        ControlExtra3,
+        ControlExtra4,
+        ControlExtra5
+    };
+
     bool tls_enabled_;
 
-    void handle_write(int res) {
-        IoUringManager::getInstance().finalize_current_task(false, 1);
-    }
-
-    void arm_write() {/*
+    void arm_write() {
         if (tls_enabled_) {
             auto [taskid, success] = IoUringManager::getInstance().call_dependent_function<InetSocketTLSEvent>(
                 this,
                 0,
                 &InetSocketTLSEvent::write,
-                (char*)write_buffer_.data().data(),
-                write_buffer_.size()
+                w_buf_,
+                w_len_
             );
             taskid_writer_ = taskid;
         } else {
@@ -91,12 +137,12 @@ protected:
                 this,
                 0,
                 &InetSocketReadWriteEventBytes::write,
-                (char*)write_buffer_.data().data(),
-                write_buffer_.size()
+                w_buf_,
+                w_len_
             );
             taskid_writer_ = taskid;
 
-        }*/
+        }
     }
 };
 

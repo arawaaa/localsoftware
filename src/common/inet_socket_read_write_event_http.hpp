@@ -81,7 +81,6 @@ public:
         auto res = get<ChildTaskCompletion>(event);
         if (res.return_code <= 0) {
             IoUringManager::getInstance().finalize_current_task(true, res.return_code);
-            IoUringManager::getInstance().consume_event(res.task_id);
             return;
         }
 

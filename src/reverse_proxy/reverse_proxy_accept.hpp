@@ -7,41 +7,42 @@
 
 #include "common/io_event.hpp"
 #include "common/io_uring_manager.hpp"
-#include "bandwidth_monitoring_server.hpp"
+#include "common/http_manager.hpp"
+#include "reverse_proxy_server.hpp"
 
 using namespace std;
 
-class BandwidthMonitorAcceptEvent : public IoEvent {
+class OpenClawAccept : public IoEvent {
 public:
     // Takes ownership of the listening server socket file descriptor
-    BandwidthMonitorAcceptEvent(vector<shared_ptr<File>> server_file, bool enable_tls, const string& base_dir)
-        : IoEvent(server_file), http_manager_(base_dir), enable_tls_(enable_tls) {
+    OpenClawAccept(vector<shared_ptr<File>> server_file, const string& base_dir)
+        : IoEvent(server_file), http_manager_(base_dir) {
         client_addr_len_ = sizeof(client_addr_);
     }
 
     CallResponse prepare_accept(uint64_t) {
         queue_accept();
-        return {"Bandwidth Monitor accept", true, 0};
+        return {"Reverse Proxy accept", true, 0};
     }
 
     void on_new_data(int, EventType event) override {
         if (holds_alternative<ChildTaskCompletion>(event)) {
             std::cout << "Connection close" << std::endl;
             auto res = get<ChildTaskCompletion>(event);
-            IoUringManager::getInstance().free_child_event_for_taskid<BandwidthMonitoringServer>(this, res.task_id);
+            IoUringManager::getInstance().free_child_event_for_taskid<ReverseProxyServer>(this, res.task_id);
             IoUringManager::getInstance().consume_event(res.task_id);
         } else {
             int res = get<IoUringResult>(event).res;
             if (res >= 0) {
                 char ip_str[INET_ADDRSTRLEN];
                 inet_ntop(AF_INET, &(client_addr_.sin_addr), ip_str, INET_ADDRSTRLEN);
-                cout << "[MONITOR" << (enable_tls_ ? " TLS" : "") <<"] Accept with [" << ip_str << "]:" << client_addr_.sin_port << endl;
+                cout << "[Reverse Proxy TLS] Accept with " << ip_str << ":" << client_addr_.sin_port << endl;
                 auto client_file = vector<shared_ptr<File>>{make_shared<File>(res)};
-                int idx = IoUringManager::getInstance().initialize_dependent_event<BandwidthMonitoringServer>(this, client_file, enable_tls_, http_manager_);
-                IoUringManager::getInstance().call_dependent_function<BandwidthMonitoringServer>(
+                int idx = IoUringManager::getInstance().initialize_dependent_event<ReverseProxyServer>(this, client_file, http_manager_, proxyto_, proxyport_);
+                IoUringManager::getInstance().call_dependent_function<ReverseProxyServer>(
                     this,
                     idx,
-                    &BandwidthMonitoringServer::start
+                    &ReverseProxyServer::start
                 );
             }
             // Re-arm immediately
@@ -50,7 +51,7 @@ public:
     }
 
     std::string get_info() const override {
-        return "BandwidthMonitorAcceptEvent on FD " + std::to_string(files_[0]->get());
+        return "OpenClaw on FD " + std::to_string(files_[0]->get());
     }
 
 private:
@@ -61,7 +62,8 @@ private:
     }
 
     HTTPManager http_manager_;
-    bool enable_tls_;
+    string proxyto_;
+    int proxyport_;
     struct sockaddr_in client_addr_{};
     socklen_t client_addr_len_;
 };

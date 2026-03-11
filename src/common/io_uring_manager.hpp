@@ -5,8 +5,6 @@
 #include <functional>
 #include <tuple>
 #include <utility>
-#include <mutex>
-#include <deque>
 #include <optional>
 #include <typeindex>
 #include <queue>
@@ -74,7 +72,8 @@ public:
         uint64_t id = next_id_++;
         uint64_t old_running_id = running_id_;
         running_id_ = id;
-        
+        call_map_[old_running_id].other_ids.insert(running_id_);
+
         T* ev = static_cast<T*>(parent->uring_data_.events[type_index(typeid(T))][idx].get());
 
         CallData& data = call_map_[id];
@@ -146,6 +145,10 @@ public:
 
         data.status = failed ? CallStatus::Failed : CallStatus::Finished;
         data.return_code = return_code;
+
+        for (auto id : data.other_ids) {
+            call_map_.erase(id);
+        }
     }
 
     void run(struct io_uring* ring) {
@@ -174,6 +177,11 @@ public:
                     uint64_t old_rid = running_id_;
                     running_id_ = rid;
                     something_queued_ = false;
+                    if (!call_map_.contains(running_id_)) {
+                        delete data;
+                        i++;
+                        continue;
+                    }
                     ev->on_new_data(op, IoUringResult{(*ptr)->res});
                     if (!something_queued_) {
                         ofs_ << "on_new_data failed to make action. Class: " << ev->get_info() << std::endl;
