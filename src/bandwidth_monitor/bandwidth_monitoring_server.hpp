@@ -1,14 +1,10 @@
 #pragma once
 
 #include <boost/beast/http/string_body.hpp>
-#include <variant>
 #include <vector>
 #include <string>
 #include <cstring>
-#include <sstream>
-#include <algorithm>
 #include <cctype>
-#include <iostream>
 
 #include <openssl/sha.h>
 

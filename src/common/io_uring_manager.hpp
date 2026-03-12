@@ -1,6 +1,5 @@
 #pragma once
 
-#include <fstream>
 #include <vector>
 #include <functional>
 #include <tuple>
@@ -18,7 +17,6 @@
 #include "io_event.hpp"
 #include "defs.hpp"
 
-#include <iostream>
 using namespace std;
 
 class IoUringManager {
@@ -68,7 +66,6 @@ public:
 
     template <typename T, typename Method, typename... Args>
     pair<uint64_t, bool> call_dependent_function(IoEvent* parent, int idx, Method method, Args&&... args) {
-        something_queued_ = true;
         uint64_t id = next_id_++;
         uint64_t old_running_id = running_id_;
         running_id_ = id;
@@ -139,7 +136,6 @@ public:
     }
 
     void finalize_current_task(bool failed, int return_code) {
-        something_queued_ = true;
         if (running_id_ == 0) return;
         auto& data = call_map_[running_id_];
 
@@ -176,16 +172,12 @@ public:
                     
                     uint64_t old_rid = running_id_;
                     running_id_ = rid;
-                    something_queued_ = false;
                     if (!call_map_.contains(running_id_)) {
                         delete data;
                         i++;
                         continue;
                     }
                     ev->on_new_data(op, IoUringResult{(*ptr)->res});
-                    if (!something_queued_) {
-                        ofs_ << "on_new_data failed to make action. Class: " << ev->get_info() << std::endl;
-                    }
 
                     if (rid != 0 && (call_map_[rid].status == CallStatus::Finished || call_map_[rid].status == CallStatus::Failed)) {
                         propagation_queue_.push(rid);
@@ -206,7 +198,6 @@ public:
 
     template <typename F, typename... Args>
     void cache_call(IoEvent* ev, int op, F&& func, Args&&... args) {
-        something_queued_ = true;
         pending_events_.emplace_back(ev, op, running_id_, [f = std::forward<F>(func), ...args = std::forward<Args>(args)](struct io_uring_sqe* sqe) mutable {
             f(sqe, args...);
         });
@@ -214,7 +205,6 @@ public:
 
     template <typename T>
     void free_child_event_for_taskid(IoEvent* parent, uint64_t taskid) {
-        something_queued_ = true;
         auto& calldata = call_map_[taskid];
         parent->uring_data_.events[type_index(typeid(T))][calldata.event->uring_data_.id].reset();
     }
@@ -266,12 +256,8 @@ private:
                 uint64_t old_rid = running_id_;
                 running_id_ = parent_id;
                 
-                something_queued_ = false;
                 ChildTaskCompletion comp = {finished_id, it->second.status, it->second.return_code};
                 parent_entry.event->on_new_data(ID_DEFAULT, comp);
-                if (!something_queued_) {
-                    ofs_ << "on_new_data failed to make action. Class: " << parent_entry.event->get_info() << std::endl;
-                }
 
                 if (parent_entry.status == CallStatus::Finished || parent_entry.status == CallStatus::Failed) {
                     propagation_queue_.push(parent_id);
@@ -283,8 +269,6 @@ private:
     }
 
     IoUringManager() {
-        ofs_ = std::ofstream{"/home/rapi/log.txt"};
-        ofs_ << "Start of file" << std::endl;
         tls_ctx_ = SSL_CTX_new(TLS_server_method());
         if (tls_ctx_ == NULL) {
             throw runtime_error{"Unable to create libssl context"};
@@ -316,9 +300,6 @@ private:
     ~IoUringManager() {
         SSL_CTX_free(tls_ctx_);
     }
-
-    bool something_queued_ = false;
-    std::ofstream ofs_;
 
     SSL_CTX* tls_ctx_;
     vector<tuple<IoEvent*, int, uint64_t, function<void(struct io_uring_sqe*)>>> pending_events_;

@@ -49,8 +49,6 @@ public:
             prepare_read(res);
         } else if (op == ID_WRITE) {
             prepare_write(res);
-        } else {
-            std::cout << "Fell through" << std::endl;
         }
     }
 

@@ -112,8 +112,8 @@
 
         let isLive = false;
         // Use window.location.host to automatically get hostname:port
-        const host = window.location.host || 'rapi.local:8888';
-        const wsUrl = `ws://${host}`;
+        const host = window.location.host || 'rapi.local:8443';
+        const wsUrl = `wss://${host}`;
         let ws;
 
         console.log("Connecting to WebSocket:", wsUrl);

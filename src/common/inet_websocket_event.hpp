@@ -2,7 +2,6 @@
 
 #include <cstdint>
 #include <limits>
-#include <memory>
 
 #include <boost/beast/http.hpp>
 #include <boost/beast/core/flat_buffer.hpp>

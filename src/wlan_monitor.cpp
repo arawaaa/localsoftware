@@ -18,7 +18,6 @@
 #include "common/io_uring_manager.hpp"
 #include "bandwidth_monitor/accept_event.hpp"
 #include "aio_landing/aio_landing_accepter.hpp"
-#include "reverse_proxy/reverse_proxy_accept.hpp"
 
 using namespace std;
 
@@ -161,18 +160,26 @@ int setup_server_socket(int port) {
 
 void server_func() {
     // Single stack IPv6 for all surfaces outside of homepage, which is dual-stack
-    int ws_fd = setup_server_socket6(SERVER_PORT);
+    int ws_fd = setup_server_socket(SERVER_PORT);
     if (ws_fd < 0) return;
+
+    int ws6_fd = setup_server_socket6(SERVER_PORT);
+    if (ws_fd < 0) {
+        close(ws_fd);
+        return;
+    };
 
     int http6_fd = setup_server_socket6(HTTP_PORT);
     if (http6_fd < 0) {
         close(ws_fd);
+        close(ws6_fd);
         return;
     }
 
     int http_fd = setup_server_socket(HTTP_PORT);
     if (http_fd < 0) {
         close(http6_fd);
+        close(ws6_fd);
         close(ws_fd);
         return;
     }
@@ -181,6 +188,7 @@ void server_func() {
     if (https_fd < 0) {
         close(http6_fd);
         close(http_fd);
+        close(ws6_fd);
         close(ws_fd);
         return;
     }
@@ -190,6 +198,7 @@ void server_func() {
         close(https_fd);
         close(http6_fd);
         close(http_fd);
+        close(ws6_fd);
         close(ws_fd);
         return;
     }
@@ -200,6 +209,7 @@ void server_func() {
         close(https_fd);
         close(http6_fd);
         close(http_fd);
+        close(ws6_fd);
         close(ws_fd);
     }
 
@@ -219,8 +229,8 @@ void server_func() {
 
     auto& instance = IoUringManager::getInstance();
     // Setup WebSocket Accept Event
-    auto ws_file = make_shared<File>(ws_fd);
-    auto res = instance.initialize_root_event<BandwidthMonitorAcceptEvent>(vector<shared_ptr<File>>{ws_file}, true, "/srv/bwith");
+    auto ws_files = {make_shared<File>(ws_fd), make_shared<File>(ws6_fd)};
+    auto res = instance.initialize_root_event<BandwidthMonitorAcceptEvent>(ws_files, true, "/srv/bwith");
     instance.call_root_function<BandwidthMonitorAcceptEvent>(res, &BandwidthMonitorAcceptEvent::prepare_accept);
 
     // Setup HTTP Landing Accept Event
@@ -233,9 +243,9 @@ void server_func() {
     res = instance.initialize_root_event<AioLandingAcceptEvent>(https_files, true, "/srv/landing");
     instance.call_root_function<AioLandingAcceptEvent>(res, &AioLandingAcceptEvent::prepare_accept);
 
-    vector<shared_ptr<File>> rp_files = {make_shared<File>(rphttps_fd)};
-    res = instance.initialize_root_event<ReverseProxyAccept>(rp_files, "/srv/rp");
-    instance.call_root_function<ReverseProxyAccept>(res, &ReverseProxyAccept::prepare_accept);
+    // vector<shared_ptr<File>> rp_files = {make_shared<File>(rphttps_fd)};
+    // res = instance.initialize_root_event<ReverseProxyAccept>(rp_files, "/srv/rp");
+    // instance.call_root_function<ReverseProxyAccept>(res, &ReverseProxyAccept::prepare_accept);
 
     instance.submit_events(&ring);
 

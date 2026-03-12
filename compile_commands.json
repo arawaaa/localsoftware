@@ -1,7 +1,7 @@
 [
   {
     "directory": "/home/arawat/projects/localsoftware",
-    "command": "clang++ --target=arm-linux-gnueabihf -Wextra -Wno-deprecated-declarations --sysroot=./rpi-sysroot -fuse-ld=lld -I./rpi-sysroot/usr/include -I./src -L./rpi-sysroot/usr/lib/arm-linux-gnueabihf -L./rpi-sysroot/lib/arm-linux-gnueabihf -luring -lssl -lcrypto -lpthread -latomic -lboost_json -std=c++23 src/wlan_monitor.cpp -o wlan_monitor_bin",
+    "command": "clang++ --target=arm-linux-gnueabihf -Wextra -Wno-deprecated-declarations --sysroot=./rpi-sysroot -fuse-ld=lld -I./rpi-sysroot/usr/include -I./src -L./rpi-sysroot/usr/lib/arm-linux-gnueabihf -L./rpi-sysroot/lib/arm-linux-gnueabihf -luring -lssl -lcrypto -lpthread -latomic -lboost_json -std=c++2c src/wlan_monitor.cpp -o wlan_monitor_bin",
     "file": "src/wlan_monitor.cpp"
   }
 ]

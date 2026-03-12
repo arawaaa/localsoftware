@@ -34,6 +34,20 @@ public:
                 return HTTPManager::prepare_response(keep_alive_headers, http::status::ok, "");
             }
         });
+
+        ifstream ifs{"/etc/wlan_monitor/proxy.config"};
+        string password;
+        string redirect_url;
+        if (!getline(ifs, password) || password.empty()) {
+            throw runtime_error{"Password field not present in config"};
+        }
+        if (!getline(ifs, redirect_url) || redirect_url.empty()) {
+            throw runtime_error{"Redirect url not present"};
+        }
+
+        proxy_manager_.password = password;
+        proxy_manager_.redirect_url = redirect_url;
+
         client_addr_len_ = sizeof(client_addr_);
     }
 
