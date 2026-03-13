@@ -6,7 +6,6 @@
 #include <boost/beast/http.hpp>
 #include <boost/beast/core/flat_buffer.hpp>
 #include <boost/asio/buffer.hpp>
-#include <boost/optional/optional_io.hpp>
 
 #include "common/inet_socket_read_write_event_bytes.hpp"
 #include "io_event.hpp"
@@ -14,24 +13,25 @@
 #include "inet_socket_tls_event.hpp"
 #include "defs.hpp"
 
+#include <boost/optional/optional_io.hpp>
 using namespace std;
 namespace http = boost::beast::http;
 
 /**
- * @brief Base implementation for HTTP socket reading using Boost.Beast parsers.
+ * @brief Base implementation for HTTP client reading using Boost.Beast parsers.
  */
-class InetSocketReadWriteEventHTTP : public IoEvent {
+class InetSocketReadWriteEventHTTPC : public IoEvent {
 public:
-    InetSocketReadWriteEventHTTP(vector<shared_ptr<File>> file, bool use_ssl = false)
+    InetSocketReadWriteEventHTTPC(vector<shared_ptr<File>> file, bool use_ssl = false)
         : IoEvent(file), tls_enabled_(use_ssl)
     {
         if (tls_enabled_)
-            IoUringManager::getInstance().initialize_dependent_event<InetSocketTLSEvent>(this, file, true);
+            IoUringManager::getInstance().initialize_dependent_event<InetSocketTLSEvent>(this, file, false);
         else
             IoUringManager::getInstance().initialize_dependent_event<InetSocketReadWriteEventBytes>(this, file);
     }
 
-    virtual ~InetSocketReadWriteEventHTTP() {
+    virtual ~InetSocketReadWriteEventHTTPC() {
 
     }
 
@@ -41,7 +41,7 @@ public:
      */
     CallResponse read_http(uint64_t) {
         read_op_ = true;
-        parser_ = make_unique<http::request_parser<http::string_body>>();
+        parser_ = make_unique<http::response_parser<http::string_body>>();
 
         handle_read(0);
         return {"Read HTTP", true, OP_HINT_READ};
@@ -50,16 +50,16 @@ public:
     /**
      * @brief Returns the completed parser by moving it out.
      */
-    pair<GetDataInfo, unique_ptr<http::request_parser<http::string_body>>> get_data(uint64_t) {
+    pair<GetDataInfo, unique_ptr<http::response_parser<http::string_body>>> get_data(uint64_t) {
         return {GetDataInfo {true}, std::move(parser_)};
     }
 
     /**
      * @brief Serializes an HTTP response into the write buffer and starts the write process.
      */
-    CallResponse write_http(uint64_t, http::response<http::string_body> res) {
+    CallResponse write_http(uint64_t, http::request<http::string_body> res) {
         read_op_ = false;
-        http::response_serializer<http::string_body> sr{res};
+        http::request_serializer<http::string_body> sr{res};
         boost::system::error_code ec;
         while (!sr.is_done()) {
             sr.next(ec, [&](auto const&, auto const& src) {
@@ -100,7 +100,7 @@ public:
 protected:
     bool read_op_;
     uint64_t taskid_writer_, taskid_reader_;
-    unique_ptr<http::request_parser<http::string_body>> parser_;
+    unique_ptr<http::response_parser<http::string_body>> parser_;
     boost::beast::flat_buffer buffer_;
     boost::beast::flat_buffer write_buffer_;
 

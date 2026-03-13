@@ -35,10 +35,10 @@ sshpass -p 'rapi' scp -r -o StrictHostKeyChecking=no wlan_monitor_bin \
     config/98-update-vpn \
     config/99-update-dnsmasq-relay \
     frontend/build/client \
-    rapi@rapi.local:~/
+    rapi@192.168.12.223:~/
 
 # Deploy and restart
-sshpass -p 'rapi' ssh -o StrictHostKeyChecking=no rapi@rapi.local "sudo -S mv /home/rapi/wlan_monitor_bin /usr/local/bin/wlan_monitor && \
+sshpass -p 'rapi' ssh -o StrictHostKeyChecking=no rapi@192.168.12.223 "sudo -S mv /home/rapi/wlan_monitor_bin /usr/local/bin/wlan_monitor && \
 sudo mkdir -p /srv/landing && \
 sudo mkdir -p /srv/bwith && \
 sudo mkdir -p /srv/rp && \

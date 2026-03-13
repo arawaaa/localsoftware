@@ -20,8 +20,8 @@ using namespace std;
  */
 class InetSocketTLSEvent : public IoEvent {
 public:
-    InetSocketTLSEvent(vector<shared_ptr<File>> file)
-        : IoEvent(file)
+    InetSocketTLSEvent(vector<shared_ptr<File>> file, bool server)
+        : IoEvent(file), server_(server)
     {
         if ((ssl_ = SSL_new(IoUringManager::getInstance().get_tls_ctx())) == NULL) {
             throw runtime_error{"Failed to create ssl object"};
@@ -84,6 +84,7 @@ public:
 
 protected:
     uint64_t taskid_read_, taskid_write_;
+    bool server_;
 
     bool sticky_read_ = false, op_read_ = false;
     char* u_read_, *u_write_;
@@ -102,23 +103,27 @@ protected:
     char e_read_[MAXFRAMELENGTH], e_write_[MAXFRAMELENGTH];
     TLSState state_;
 
+    void handle_handshake() {
+        int ec = server_ ? SSL_accept(ssl_) : SSL_connect(ssl_);
+        if (SSL_get_error(ssl_, ec) == SSL_ERROR_WANT_READ) {
+            BIO_read_ex(writebuf_, e_write_, sizeof(e_write_), &e_writelen_);
+            if (e_writelen_) {
+                arm_write();
+            } else {
+                arm_read();
+            }
+        } else if (SSL_get_error(ssl_, ec) != SSL_ERROR_NONE) {
+            ERR_print_errors_fp(stderr);
+            IoUringManager::getInstance().finalize_current_task(true, -1);
+        } else {
+            state_ = TLSState::Full;
+        }
+    }
+
     void handle_read(int res) {
         BIO_write(readbuf_, e_read_, res);
         if (state_ == TLSState::WaitHello) {
-            int ec = SSL_accept(ssl_);
-            if (SSL_get_error(ssl_, ec) == SSL_ERROR_WANT_READ) {
-                BIO_read_ex(writebuf_, e_write_, sizeof(e_write_), &e_writelen_);
-                if (e_writelen_) {
-                    arm_write();
-                } else {
-                    arm_read();
-                }
-            } else if (SSL_get_error(ssl_, ec) != SSL_ERROR_NONE) {
-                ERR_print_errors_fp(stderr);
-                IoUringManager::getInstance().finalize_current_task(true, -1);
-            } else {
-                state_ = TLSState::Full;
-            }
+            handle_handshake();
         }
         if (state_ == TLSState::Full) { do {
             size_t readbytes = 0;
@@ -151,32 +156,35 @@ protected:
         } while (BIO_ctrl_pending(readbuf_) && (u_readlen_ - u_read_p_) && (sticky_read_ || !u_read_p_));}
     }
 
-    void handle_write(int res) {
-        if (res < 0) return IoUringManager::getInstance().finalize_current_task(true, res);
+    void handle_write(int) {
+        if (state_ == TLSState::WaitHello) {
+            handle_handshake();
+        }
+        if (state_ == TLSState::Full) {
+            size_t numread = 0;
+            int ret = SSL_write_ex(ssl_, u_write_ + u_write_p_, min(u_writelen_ - u_write_p_, MAXUFRAMELENGTH), &numread);
+            u_write_p_ += numread;
 
-        size_t numread = 0;
-        int ret = SSL_write_ex(ssl_, u_write_ + u_write_p_, min(u_writelen_ - u_write_p_, MAXUFRAMELENGTH), &numread);
-        u_write_p_ += numread;
-
-        switch (SSL_get_error(ssl_, ret)) {
-            case SSL_ERROR_WANT_READ:
-                if (BIO_ctrl_pending(writebuf_)) {
-                    BIO_read_ex(writebuf_, e_write_, sizeof(e_write_), &e_writelen_);
-                    arm_write();
-                } else {
-                    arm_read();
-                }
-                break;
-            case SSL_ERROR_NONE:
-                if (BIO_ctrl_pending(writebuf_) || (u_writelen_ - u_write_p_)) {
-                    BIO_read_ex(writebuf_, e_write_, sizeof(e_write_), &e_writelen_);
-                    arm_write();
-                } else {
-                    IoUringManager::getInstance().finalize_current_task(false, u_writelen_);
-                }
-                break;
-            default:
-                IoUringManager::getInstance().finalize_current_task(true, -1);
+            switch (SSL_get_error(ssl_, ret)) {
+                case SSL_ERROR_WANT_READ:
+                    if (BIO_ctrl_pending(writebuf_)) {
+                        BIO_read_ex(writebuf_, e_write_, sizeof(e_write_), &e_writelen_);
+                        arm_write();
+                    } else {
+                        arm_read();
+                    }
+                    break;
+                case SSL_ERROR_NONE:
+                    if (BIO_ctrl_pending(writebuf_) || (u_writelen_ - u_write_p_)) {
+                        BIO_read_ex(writebuf_, e_write_, sizeof(e_write_), &e_writelen_);
+                        arm_write();
+                    } else {
+                        IoUringManager::getInstance().finalize_current_task(false, u_writelen_);
+                    }
+                    break;
+                default:
+                    IoUringManager::getInstance().finalize_current_task(true, -1);
+            }
         }
     }
 

@@ -9,10 +9,29 @@
         #header { max-width: 1000px; margin: 0 auto; }
     </style>
     <script>
-        document.getElementById("auth").onclick = function() {
-            const request = new Request("/login", { method: "POST", body: document.getElementById("password").value })
-            fetch("/login", request)
+        function addListener() {
+            document.getElementById("auth").onclick = async function() {
+                const response = await fetch('/login', {
+                    method: 'POST',
+                    body: document.getElementById("password").value
+                })
+
+                if (!response.ok) {
+                    const message = `Failed to authenticate`;
+                    throw new Error(message);
+                }
+
+                const redirect = await response.text()
+
+                window.location.href = redirect
+                window.location.reload()
+            }
         }
+        document.addEventListener("DOMContentLoaded", (event) => {
+            addListener()
+        });
+
+        console.log("run")
     </script>
 </head>
 <body>

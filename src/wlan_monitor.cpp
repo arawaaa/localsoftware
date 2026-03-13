@@ -18,6 +18,7 @@
 #include "common/io_uring_manager.hpp"
 #include "bandwidth_monitor/accept_event.hpp"
 #include "aio_landing/aio_landing_accepter.hpp"
+#include "reverse_proxy/reverse_proxy_accept.hpp"
 
 using namespace std;
 
@@ -111,7 +112,6 @@ int setup_server_socket6(int port) {
 
     if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
         perror("bind failed");
-        std::cout << port << std::endl;
         close(server_fd);
         return -1;
     }
@@ -243,9 +243,9 @@ void server_func() {
     res = instance.initialize_root_event<AioLandingAcceptEvent>(https_files, true, "/srv/landing");
     instance.call_root_function<AioLandingAcceptEvent>(res, &AioLandingAcceptEvent::prepare_accept);
 
-    // vector<shared_ptr<File>> rp_files = {make_shared<File>(rphttps_fd)};
-    // res = instance.initialize_root_event<ReverseProxyAccept>(rp_files, "/srv/rp");
-    // instance.call_root_function<ReverseProxyAccept>(res, &ReverseProxyAccept::prepare_accept);
+    vector<shared_ptr<File>> rp_files = {make_shared<File>(rphttps_fd)};
+    res = instance.initialize_root_event<ReverseProxyAccept>(rp_files, "/srv/rp");
+    instance.call_root_function<ReverseProxyAccept>(res, &ReverseProxyAccept::prepare_accept);
 
     instance.submit_events(&ring);
 

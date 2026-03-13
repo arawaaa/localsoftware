@@ -64,6 +64,12 @@ public:
         return {"Websocket Write", true, OP_HINT_WRITE};
     }
 
+    CallResponse read_frame(uint64_t, char** buf) {
+        // TODO implement
+        r_buf_ = buf;
+        return {"Websocket Read", true, OP_HINT_READ};
+    }
+
     /**
      * @brief Handle the completion queue entry (CQE) result.
      */
@@ -84,6 +90,8 @@ public:
     }
 
 protected:
+    char headers_[128];
+    char** r_buf_;
     char* w_buf_ = nullptr;
     size_t w_len_;
     bool read_op_;
@@ -129,6 +137,37 @@ protected:
                 &InetSocketTLSEvent::write,
                 w_buf_,
                 w_len_
+            );
+            taskid_writer_ = taskid;
+        } else {
+            auto [taskid, success] = IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventBytes>(
+                this,
+                0,
+                &InetSocketReadWriteEventBytes::write,
+                w_buf_,
+                w_len_
+            );
+            taskid_writer_ = taskid;
+
+        }
+    }
+
+    enum Type {
+        Header,
+        Length1,
+        Length2,
+        Content
+    };
+
+    void arm_read(int len, int ) {
+        if (tls_enabled_) {
+            auto [taskid, success] = IoUringManager::getInstance().call_dependent_function<InetSocketTLSEvent>(
+                this,
+                0,
+                &InetSocketTLSEvent::read,
+                w_buf_,
+                w_len_,
+                false
             );
             taskid_writer_ = taskid;
         } else {

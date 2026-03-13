@@ -131,6 +131,19 @@ public:
         source->uring_data_.events[type_index(typeid(SubEvent))].clear();
     }
 
+    template <typename T1_from, typename SubEvent>
+    void move_subevents_up(IoEvent* parent, size_t idx) {
+        auto source = parent->uring_data_.events[type_index(typeid(T1_from))][idx];
+        auto& svec = source->uring_data_.events[type_index(typeid(SubEvent))];
+        auto& dvec = parent->uring_data_.events[type_index(typeid(SubEvent))];
+        auto s = dvec.size();
+        for_each(svec.begin(), svec.end(), [s] (shared_ptr<IoEvent>& ptr) {
+            ptr->uring_data_.id += s;
+        });
+        dvec.insert(dvec.end(), svec.begin(), svec.end());
+        source->uring_data_.events[type_index(typeid(SubEvent))].clear();
+    }
+
     CallData& get_call_data(uint64_t taskid) {
         return call_map_[taskid];
     }

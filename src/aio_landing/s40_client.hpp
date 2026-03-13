@@ -171,8 +171,7 @@ public:
                                                             result.fan = status.at("fan").as_bool();
                                                             result.valid = true;
                                                         }
-                                                        std::cout << status << std::endl;
-                                                        std::cout << status.contains("period") << ' ' << status.at("period").is_object() << std::endl;
+
                                                         if (status.contains("period") && status.at("period").is_object()) {
                                                             auto period_obj = status.at("period").as_object();
                                                             if (period_obj.contains("systemMode")) {

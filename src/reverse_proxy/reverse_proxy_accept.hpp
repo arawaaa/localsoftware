@@ -4,12 +4,13 @@
 #include <netinet/in.h>
 #include <iostream>
 #include <cstring>
+#include <format>
 
 #include "common/io_event.hpp"
 #include "common/io_uring_manager.hpp"
 #include "common/http_manager.hpp"
 #include "reverse_proxy_server.hpp"
-#include "common/reverse_proxy_manager.hpp"
+#include "reverse_proxy_manager.hpp"
 
 using namespace std;
 constexpr string password = "arnavopenclaw";
@@ -25,28 +26,39 @@ public:
             {http::field::connection, "keep-alive"}
         };
 
-        http_manager_.add_endpoint("/login", [keep_alive_headers](const auto& req) {
-            if (req.method() != http::verb::post) {
-                return HTTPManager::prepare_response(keep_alive_headers, http::status::method_not_allowed, "");
-            } else if (req.body() != password) {
-                return HTTPManager::prepare_response(keep_alive_headers, http::status::forbidden, "");
+        http_manager_.add_endpoint("/login", [this, keep_alive_headers](const auto& req) mutable {
+            if (req.body() != proxy_manager_.password) {
+                return HTTPManager::prepare_response(keep_alive_headers, http::status::unauthorized, "");
             } else {
-                return HTTPManager::prepare_response(keep_alive_headers, http::status::ok, "");
+                auto tok = proxy_manager_.create_new_token();
+                keep_alive_headers.push_back({http::field::set_cookie, format("token={}; HttpOnly; Secure; SameSite=lax", tok)});
+                return HTTPManager::prepare_response(keep_alive_headers, http::status::ok, proxy_manager_.redirect_url);
             }
-        });
+        }, http::verb::post);
 
         ifstream ifs{"/etc/wlan_monitor/proxy.config"};
         string password;
         string redirect_url;
+        string peer;
+        string ports; int port;
         if (!getline(ifs, password) || password.empty()) {
             throw runtime_error{"Password field not present in config"};
         }
         if (!getline(ifs, redirect_url) || redirect_url.empty()) {
             throw runtime_error{"Redirect url not present"};
         }
+        if (!getline(ifs, peer) || peer.empty()) {
+            throw runtime_error{"Peer URL not present"};
+        }
+        if (!getline(ifs, ports)) {
+            throw runtime_error{"Port not present"};
+        }
+        port = stoi(ports);
 
         proxy_manager_.password = password;
         proxy_manager_.redirect_url = redirect_url;
+        proxy_manager_.peer_addr = peer;
+        proxy_manager_.port = port;
 
         client_addr_len_ = sizeof(client_addr_);
     }
@@ -67,9 +79,9 @@ public:
             if (res >= 0) {
                 char ip_str[INET_ADDRSTRLEN];
                 inet_ntop(AF_INET, &(client_addr_.sin_addr), ip_str, INET_ADDRSTRLEN);
-                cout << "[Reverse Proxy TLS] Accept with " << ip_str << ":" << client_addr_.sin_port << endl;
+                cout << "[Reverse Proxy TLS] Accept with [" << ip_str << "]:" << client_addr_.sin_port << endl;
                 auto client_file = vector<shared_ptr<File>>{make_shared<File>(res)};
-                int idx = IoUringManager::getInstance().initialize_dependent_event<ReverseProxyServer>(this, client_file, http_manager_, proxyto_, proxyport_);
+                int idx = IoUringManager::getInstance().initialize_dependent_event<ReverseProxyServer>(this, client_file, http_manager_, proxy_manager_);
                 IoUringManager::getInstance().call_dependent_function<ReverseProxyServer>(
                     this,
                     idx,
