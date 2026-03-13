@@ -4,6 +4,8 @@
 #include <boost/beast/http/field.hpp>
 #include <netdb.h>
 
+#include "common/inet_socket_read_write_event_bytes.hpp"
+#include "common/inet_socket_tls_event.hpp"
 #include "common/io_event.hpp"
 #include "common/io_uring_manager.hpp"
 #include "common/inet_socket_read_write_event_http.hpp"
@@ -33,6 +35,7 @@ public:
     void on_new_data(int, EventType event) override {
         auto res = get<ChildTaskCompletion>(event);
         if (res.return_code <= 0) {
+            cout << "CLOSE " << res.task_id << endl;
             IoUringManager::getInstance().finalize_current_task(true, -1);
             return;
         }
@@ -115,6 +118,85 @@ public:
             }
             case Websocket:
             {
+                if (check_websocket_) {
+                    IoUringManager::getInstance().move_subevents_up<InetSocketReadWriteEventHTTP, InetSocketTLSEvent>(
+                        this, 0);
+                    IoUringManager::getInstance().move_subevents_up<InetSocketReadWriteEventHTTPC, InetSocketReadWriteEventBytes>(
+                        this, 0);
+
+                    auto [eid, _] = IoUringManager::getInstance().call_dependent_function<InetSocketTLSEvent>(
+                        this,
+                        0,
+                        &InetSocketTLSEvent::read,
+                        e_buf_,
+                        sizeof(e_buf_),
+                        false
+                    );
+                    auto [iid, _] = IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventBytes>(
+                        this,
+                        0,
+                        &InetSocketReadWriteEventBytes::read,
+                        i_buf_,
+                        sizeof(i_buf_),
+                        false
+                    );
+
+                    e_to_i_ = eid;
+                    i_to_e_ = iid;
+                    check_websocket_ = false;
+                }
+
+                cout << res.task_id << ' ' << e_to_i_ << ' ' << i_to_e_ << ' ' << e_read_ << ' ' << i_read_ << endl;
+
+                if (res.task_id == e_to_i_) {
+                    if (e_read_) {
+                        auto [eid, _] = IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventBytes>(
+                            this,
+                            0,
+                            &InetSocketReadWriteEventBytes::write,
+                            e_buf_,
+                            res.return_code
+                        );
+                        e_to_i_ = eid;
+                        e_read_ = false;
+                    } else {
+                        auto [eid, _] = IoUringManager::getInstance().call_dependent_function<InetSocketTLSEvent>(
+                            this,
+                            0,
+                            &InetSocketTLSEvent::read,
+                            e_buf_,
+                            sizeof(e_buf_),
+                            false
+                        );
+                        e_to_i_ = eid;
+                        e_read_ = true;
+                    }
+                } else if (res.task_id == i_to_e_) {
+                    if (i_read_) {
+                        auto [iid, _] = IoUringManager::getInstance().call_dependent_function<InetSocketTLSEvent>(
+                            this,
+                            0,
+                            &InetSocketTLSEvent::write,
+                            i_buf_,
+                            res.return_code
+                        );
+                        i_to_e_ = iid;
+                        i_read_ = false;
+                    } else {
+                        auto [iid, _] = IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventBytes>(
+                            this,
+                            0,
+                            &InetSocketReadWriteEventBytes::read,
+                            i_buf_,
+                            sizeof(i_buf_),
+                            false
+                        );
+                        i_to_e_ = iid;
+                        i_read_ = true;
+                    }
+                }
+
+                cout <<e_to_i_ << ' ' << i_to_e_ << endl;
 
             }
         }
@@ -125,7 +207,9 @@ public:
 
 private:
     bool check_websocket_ = false;
-    uint64_t e_to_i_[2], i_to_e_[2];
+    bool e_read_ = true, i_read_ = true;
+    char e_buf_[16384], i_buf_[16384];
+    uint64_t e_to_i_ = 0, i_to_e_ = 0;
     bool connected_intern_peer_ = false;
     enum State {
         ReadExternalPeer,

@@ -70,10 +70,12 @@ public:
             return;
         }
 
-        if (op_read_) {
-            handle_read(res.task_id == taskid_read_ ? res.return_code : 0);
+        if (res.task_id == task_assoc_read_) {
+            handle_read(read_opposite_ ? res.return_code : 0);
+        } else if (res.task_id == task_assoc_write_) {
+            handle_write(write_opposite_ ? res.return_code : 0);
         } else {
-            handle_write(res.task_id == taskid_write_ ? res.return_code : 0);
+            throw runtime_error{"Unknown task type"};
         }
         IoUringManager::getInstance().consume_event(res.task_id);
     }
@@ -83,10 +85,11 @@ public:
     }
 
 protected:
+    uint64_t task_assoc_read_, task_assoc_write_;
     uint64_t taskid_read_, taskid_write_;
     bool server_;
 
-    bool sticky_read_ = false, op_read_ = false;
+    bool sticky_read_ = false, read_opposite_ = false, write_opposite_ = false;
     char* u_read_, *u_write_;
     size_t u_readlen_, u_writelen_, u_read_p_, u_write_p_;
 
@@ -103,14 +106,14 @@ protected:
     char e_read_[MAXFRAMELENGTH], e_write_[MAXFRAMELENGTH];
     TLSState state_;
 
-    void handle_handshake() {
+    void handle_handshake(uint64_t& assoc) {
         int ec = server_ ? SSL_accept(ssl_) : SSL_connect(ssl_);
         if (SSL_get_error(ssl_, ec) == SSL_ERROR_WANT_READ) {
-            BIO_read_ex(writebuf_, e_write_, sizeof(e_write_), &e_writelen_);
-            if (e_writelen_) {
-                arm_write();
+            if (BIO_ctrl_pending(writebuf_)) {
+                BIO_read_ex(writebuf_, e_write_, sizeof(e_write_), &e_writelen_);
+                arm_write(assoc);
             } else {
-                arm_read();
+                arm_read(assoc);
             }
         } else if (SSL_get_error(ssl_, ec) != SSL_ERROR_NONE) {
             ERR_print_errors_fp(stderr);
@@ -188,7 +191,7 @@ protected:
         }
     }
 
-    void arm_read() {
+    void arm_read(uint64_t& assoc) {
         auto [taskid, success] = IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventBytes>(
             this,
             0,
@@ -197,10 +200,10 @@ protected:
             sizeof(e_read_),
             false // Must always be non-sticky since we don't know how much encrypted bytes to read for n unenc bytes
         );
-        taskid_read_ = taskid;
+        assoc = taskid;
     }
 
-    void arm_write() {
+    void arm_write(uint64_t& assoc) {
         auto [taskid, success] = IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventBytes>(
             this,
             0,
@@ -208,6 +211,6 @@ protected:
             e_write_,
             e_writelen_
         );
-        taskid_write_ = taskid;
+        assoc = taskid;
     }
 };
