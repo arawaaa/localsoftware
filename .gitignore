@@ -9,3 +9,4 @@ wlan_usage.log
 home-assistant-lennox-local-https/
 .cache/
 proxy.config
+build

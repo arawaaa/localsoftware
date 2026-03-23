@@ -69,17 +69,17 @@ public:
         uint64_t id = next_id_++;
         uint64_t old_running_id = running_id_;
         running_id_ = id;
-        call_map_[old_running_id].other_ids.insert(running_id_);
+        call_map_[old_running_id].other_ids.push_back(running_id_);
 
         T* ev = static_cast<T*>(parent->uring_data_.events[type_index(typeid(T))][idx].get());
 
         CallData& data = call_map_[id];
         data.status = CallStatus::Running;
         data.event = ev;
-        data.parent_task_id = old_running_id;
+        data.parent_task_id.push_back(old_running_id);
 
         CallResponse resp = (ev->*method)(id, std::forward<Args>(args)...);
-        
+
         if (id != 0 && (data.status == CallStatus::Finished || data.status == CallStatus::Failed)) {
             propagation_queue_.push(id);
         } else if (!resp.success) {
@@ -87,11 +87,11 @@ public:
         }
         data.description = std::move(resp.description);
         data.op_hint = resp.op_hint;
-        
+
         if (old_running_id != 0) {
             call_map_[old_running_id].event = parent;
         }
-        
+
         running_id_ = old_running_id;
         return {id, resp.success};
     }
@@ -109,7 +109,6 @@ public:
         data.status = resp.success ? CallStatus::Running : CallStatus::Failed;
         data.description = std::move(resp.description);
         data.op_hint = resp.op_hint;
-        data.parent_task_id = 0;
         data.event = ev;
 
         running_id_ = old_running_id;
@@ -154,19 +153,15 @@ public:
 
         data.status = failed ? CallStatus::Failed : CallStatus::Finished;
         data.return_code = return_code;
-
-        for (auto id : data.other_ids) {
-            call_map_.erase(id);
-        }
     }
 
-    void run(struct io_uring* ring) {
+    void run(io_uring* ring) {
         while (true) {
             // Ensure pending submissions are sent
             submit_events(ring);
 
-            struct io_uring_cqe *cqe[16] = {nullptr};
-            struct __kernel_timespec ts ={
+            io_uring_cqe *cqe[16] = {nullptr};
+            __kernel_timespec ts ={
                 .tv_sec = 10,
                 .tv_nsec = 0
             };
@@ -182,22 +177,24 @@ public:
                     IoEvent* ev = data->event;
                     int op = data->op;
                     uint64_t rid = data->running_id;
-                    
+
                     uint64_t old_rid = running_id_;
                     running_id_ = rid;
                     if (!call_map_.contains(running_id_)) {
                         delete data;
+                        running_id_ = old_rid;
                         i++;
                         continue;
                     }
-                    ev->on_new_data(op, IoUringResult{(*ptr)->res});
+
+                    ev->on_new_data(op, IoUringResult{running_id_, (*ptr)->res});
 
                     if (rid != 0 && (call_map_[rid].status == CallStatus::Finished || call_map_[rid].status == CallStatus::Failed)) {
                         propagation_queue_.push(rid);
                     }
-                    
+
                     running_id_ = old_rid;
-                    
+
                     delete data;
                 }
                 i++;
@@ -211,7 +208,7 @@ public:
 
     template <typename F, typename... Args>
     void cache_call(IoEvent* ev, int op, F&& func, Args&&... args) {
-        pending_events_.emplace_back(ev, op, running_id_, [f = std::forward<F>(func), ...args = std::forward<Args>(args)](struct io_uring_sqe* sqe) mutable {
+        pending_events_.emplace_back(ev, op, running_id_, [f = std::forward<F>(func), ...args = std::forward<Args>(args)](io_uring_sqe* sqe) mutable {
             f(sqe, args...);
         });
     }
@@ -222,22 +219,32 @@ public:
         parent->uring_data_.events[type_index(typeid(T))][calldata.event->uring_data_.id].reset();
     }
 
-    void consume_event(uint64_t taskid) {
-        if (call_map_[taskid].parent_task_id != 0) {
-            call_map_[call_map_[taskid].parent_task_id].other_ids.erase(taskid);
+    void consume_event(uint64_t taskid, bool erase_in_parent = true) {
+        auto& data = call_map_[taskid];
+
+        if (erase_in_parent) {
+            for (auto id : data.parent_task_id) {
+                auto& parent_data = call_map_[id];
+                parent_data.other_ids.remove(taskid);
+            }
         }
+
+        for (auto id : data.other_ids) {
+            consume_event(id, false); // Do not alter the list we are iterating over
+        }
+
         call_map_.erase(taskid);
     }
 
-    void submit_events(struct io_uring* ring) {
+    void submit_events(io_uring* ring) {
         if (pending_events_.empty()) return;
         for (auto& item : pending_events_) {
             IoEvent* ev = get<0>(item);
             int op = get<1>(item);
             uint64_t rid = get<2>(item);
             auto& func = get<3>(item);
-            
-            struct io_uring_sqe* sqe = io_uring_get_sqe(ring);
+
+            io_uring_sqe* sqe = io_uring_get_sqe(ring);
             if (sqe) {
                 func(sqe);
                 EventData* data = new EventData{op, rid, ev};
@@ -246,6 +253,14 @@ public:
         }
         pending_events_.clear();
         io_uring_submit(ring);
+    }
+
+    void attach_child(uint64_t id) {
+        auto it = call_map_.find(id);
+        if (it != call_map_.end()) {
+            it->second.parent_task_id.push_back(running_id_);
+            call_map_[running_id_].other_ids.push_back(id);
+        }
     }
 
     SSL_CTX* get_tls_ctx() {
@@ -257,27 +272,29 @@ private:
         while (!propagation_queue_.empty()) {
             uint64_t finished_id = propagation_queue_.front();
             propagation_queue_.pop();
-            
+
             auto it = call_map_.find(finished_id);
             if (it == call_map_.end()) continue;
-            
-            uint64_t parent_id = it->second.parent_task_id;
-            if (parent_id == 0) continue;
-            
-            auto& parent_entry = call_map_[parent_id];
-            if (parent_entry.event) {
-                uint64_t old_rid = running_id_;
-                running_id_ = parent_id;
-                
-                ChildTaskCompletion comp = {finished_id, it->second.status, it->second.return_code};
-                parent_entry.event->on_new_data(ID_DEFAULT, comp);
 
-                if (parent_entry.status == CallStatus::Finished || parent_entry.status == CallStatus::Failed) {
-                    propagation_queue_.push(parent_id);
+            for (auto parent_id : it->second.parent_task_id) {
+                auto& parent_entry = call_map_[parent_id];
+                if (parent_entry.event) {
+                    uint64_t old_rid = running_id_;
+                    running_id_ = parent_id;
+
+                    ChildTaskCompletion comp = {running_id_, finished_id, it->second.status, it->second.return_code};
+
+                    parent_entry.event->on_new_data(ID_DEFAULT, comp);
+
+                    if (parent_entry.status == CallStatus::Finished || parent_entry.status == CallStatus::Failed) {
+                        propagation_queue_.push(parent_id);
+                    }
+
+                    running_id_ = old_rid;
                 }
-                
-                running_id_ = old_rid;
             }
+
+            consume_event(finished_id);
         }
     }
 
@@ -315,7 +332,7 @@ private:
     }
 
     SSL_CTX* tls_ctx_;
-    vector<tuple<IoEvent*, int, uint64_t, function<void(struct io_uring_sqe*)>>> pending_events_;
+    vector<tuple<IoEvent*, int, uint64_t, function<void(io_uring_sqe*)>>> pending_events_;
     uint64_t next_id_ = 1;
     uint64_t running_id_ = 0;
     queue<uint64_t> propagation_queue_;

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <string>
-#include <set>
+#include <list>
 #include <cstdint>
 #include <variant>
 
@@ -19,6 +19,7 @@ enum RequestID {
 enum class CallStatus { Failed, Running, Finished, Stopped };
 
 struct IoUringResult {
+    uint64_t calling_id;
     int res;
 };
 
@@ -27,6 +28,7 @@ struct Wakeup {
 };
 
 struct ChildTaskCompletion {
+    uint64_t calling_id;
     uint64_t task_id;
     CallStatus status;
     int return_code;
@@ -53,11 +55,11 @@ struct CallResponse {
 };
 
 struct CallData {
-    set<uint64_t> other_ids;
+    list<uint64_t> other_ids;
     CallStatus status;
     string description;
     uint32_t op_hint;
-    uint64_t parent_task_id;
+    list<uint64_t> parent_task_id;
     int return_code;
     IoEvent* event;
 };

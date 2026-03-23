@@ -41,22 +41,22 @@ public:
         }
     }
 
-    CallResponse read(uint64_t, char* buf, size_t len, bool read_all = true) {
+    CallResponse read(uint64_t id, char* buf, size_t len, bool read_all = true) {
         sticky_read_ = read_all;
-        op_read_ = true;
+        task_read_ = id;
         u_read_ = buf;
         u_readlen_ = len;
         u_read_p_ = 0;
-        handle_read(0);
+        handle_read();
         return {"Read len bytes into buf TLS", true, OpHint::OP_HINT_READ | OpHint::OP_HINT_NETWORK};
     }
 
-    CallResponse write(uint64_t, char* buf, size_t len) {
-        op_read_ = false;
+    CallResponse write(uint64_t id, char* buf, size_t len) {
+        task_write_ = id;
         u_write_ = buf;
         u_writelen_ = len;
         u_write_p_ = 0;
-        handle_write(0);
+        handle_write();
         return {"Write len bytes from buf TLS", true, OpHint::OP_HINT_WRITE | OpHint::OP_HINT_NETWORK};
     }
 
@@ -70,14 +70,20 @@ public:
             return;
         }
 
-        if (res.task_id == task_assoc_read_) {
-            handle_read(read_opposite_ ? res.return_code : 0);
-        } else if (res.task_id == task_assoc_write_) {
-            handle_write(write_opposite_ ? res.return_code : 0);
+        if (res.task_id == task_bytes_read_ && !task_bytes_r_fin_) {
+            task_bytes_r_fin_ = true;
+            BIO_write(readbuf_, e_read_, res.return_code);
+        } else if (res.task_id == task_bytes_write_) {
+            task_bytes_w_fin_ = true;
+        }
+
+        if (res.calling_id == task_read_) {
+            handle_read();
+        } else if (res.calling_id == task_write_) {
+            handle_write();
         } else {
             throw runtime_error{"Unknown task type"};
         }
-        IoUringManager::getInstance().consume_event(res.task_id);
     }
 
     string get_info() const override {
@@ -85,18 +91,20 @@ public:
     }
 
 protected:
-    uint64_t task_assoc_read_, task_assoc_write_;
-    uint64_t taskid_read_, taskid_write_;
+    uint64_t task_bytes_read_, task_bytes_write_;
+    bool task_bytes_r_fin_ = true, task_bytes_w_fin_ = true;
+    uint64_t task_read_, task_write_;
     bool server_;
 
-    bool sticky_read_ = false, read_opposite_ = false, write_opposite_ = false;
+    bool sticky_read_ = false;
     char* u_read_, *u_write_;
     size_t u_readlen_, u_writelen_, u_read_p_, u_write_p_;
 
     // TLS variables. Buffer procession for recv: recv -> encryptread -> ssl_read -> buffer_ -> parse
     enum TLSState {
         WaitHello,
-        Full
+        Full,
+        Failed
     };
 
     SSL* ssl_;
@@ -106,25 +114,24 @@ protected:
     char e_read_[MAXFRAMELENGTH], e_write_[MAXFRAMELENGTH];
     TLSState state_;
 
-    void handle_handshake(uint64_t& assoc) {
+    void handle_handshake() {
         int ec = server_ ? SSL_accept(ssl_) : SSL_connect(ssl_);
         if (SSL_get_error(ssl_, ec) == SSL_ERROR_WANT_READ) {
             if (BIO_ctrl_pending(writebuf_)) {
-                BIO_read_ex(writebuf_, e_write_, sizeof(e_write_), &e_writelen_);
-                arm_write(assoc);
+                arm_write();
             } else {
-                arm_read(assoc);
+                arm_read();
             }
         } else if (SSL_get_error(ssl_, ec) != SSL_ERROR_NONE) {
             ERR_print_errors_fp(stderr);
             IoUringManager::getInstance().finalize_current_task(true, -1);
+            state_ = TLSState::Failed;
         } else {
             state_ = TLSState::Full;
         }
     }
 
-    void handle_read(int res) {
-        BIO_write(readbuf_, e_read_, res);
+    void handle_read() {
         if (state_ == TLSState::WaitHello) {
             handle_handshake();
         }
@@ -137,7 +144,6 @@ protected:
             switch (SSL_get_error(ssl_, ret)) {
                 case SSL_ERROR_WANT_READ:
                     if (BIO_ctrl_pending(writebuf_)) {
-                        BIO_read_ex(writebuf_, e_write_, sizeof(e_write_), &e_writelen_);
                         arm_write();
                     } else {
                         arm_read();
@@ -150,16 +156,18 @@ protected:
                     } else if (!BIO_ctrl_pending(readbuf_)) {
                         // Nothing else in the BIO, still incomplete. Continue
                         arm_read();
-                    }
+                    } // else { repeat }
                     break;
                 default:
+                    // What to do in this case? I think ssl_write will also error out
+                    ERR_print_errors_fp(stderr);
                     IoUringManager::getInstance().finalize_current_task(true, -1);
                     return;
             }
         } while (BIO_ctrl_pending(readbuf_) && (u_readlen_ - u_read_p_) && (sticky_read_ || !u_read_p_));}
     }
 
-    void handle_write(int) {
+    void handle_write() {
         if (state_ == TLSState::WaitHello) {
             handle_handshake();
         }
@@ -171,7 +179,6 @@ protected:
             switch (SSL_get_error(ssl_, ret)) {
                 case SSL_ERROR_WANT_READ:
                     if (BIO_ctrl_pending(writebuf_)) {
-                        BIO_read_ex(writebuf_, e_write_, sizeof(e_write_), &e_writelen_);
                         arm_write();
                     } else {
                         arm_read();
@@ -179,38 +186,51 @@ protected:
                     break;
                 case SSL_ERROR_NONE:
                     if (BIO_ctrl_pending(writebuf_) || (u_writelen_ - u_write_p_)) {
-                        BIO_read_ex(writebuf_, e_write_, sizeof(e_write_), &e_writelen_);
                         arm_write();
                     } else {
                         IoUringManager::getInstance().finalize_current_task(false, u_writelen_);
                     }
                     break;
                 default:
+                    ERR_print_errors_fp(stderr);
                     IoUringManager::getInstance().finalize_current_task(true, -1);
+                    break;
             }
         }
     }
 
-    void arm_read(uint64_t& assoc) {
-        auto [taskid, success] = IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventBytes>(
-            this,
-            0,
-            &InetSocketReadWriteEventBytes::read,
-            e_read_,
-            sizeof(e_read_),
-            false // Must always be non-sticky since we don't know how much encrypted bytes to read for n unenc bytes
-        );
-        assoc = taskid;
+    void arm_read() {
+        if (task_bytes_r_fin_) {
+            auto [taskid, success] = IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventBytes>(
+                this,
+                0,
+                &InetSocketReadWriteEventBytes::read,
+                e_read_,
+                sizeof(e_read_),
+                false // Must always be non-sticky since we don't know how much encrypted bytes to read for n unenc bytes
+            );
+            task_bytes_read_ = taskid;
+            task_bytes_r_fin_ = false;
+        } else {
+            // Invariant: always called by the writer task and so can attach to pending read
+            IoUringManager::getInstance().attach_child(task_bytes_read_);
+        }
     }
 
-    void arm_write(uint64_t& assoc) {
-        auto [taskid, success] = IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventBytes>(
-            this,
-            0,
-            &InetSocketReadWriteEventBytes::write,
-            e_write_,
-            e_writelen_
-        );
-        assoc = taskid;
+    void arm_write() {
+        if (task_bytes_w_fin_) {
+            BIO_read_ex(writebuf_, e_write_, sizeof(e_write_), &e_writelen_);
+            auto [taskid, success] = IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventBytes>(
+                this,
+                0,
+                &InetSocketReadWriteEventBytes::write,
+                e_write_,
+                e_writelen_
+            );
+            task_bytes_write_ = taskid;
+            task_bytes_w_fin_ = false;
+        } else {
+            IoUringManager::getInstance().attach_child(task_bytes_write_);
+        }
     }
 };
