@@ -4,14 +4,14 @@
 #include <boost/beast/http/field.hpp>
 #include <netdb.h>
 
-#include "common/inet_socket_read_write_event_bytes.hpp"
-#include "common/inet_socket_tls_event.hpp"
-#include "common/io_event.hpp"
-#include "common/io_uring_manager.hpp"
-#include "common/inet_socket_read_write_event_http.hpp"
-#include "common/inet_socket_read_write_event_httpc.hpp"
-#include "common/http_manager.hpp"
-#include "reverse_proxy_manager.hpp"
+#include "common/inet_socket_read_write_event_bytes.cpp"
+#include "common/inet_socket_tls_event.cpp"
+#include "common/io_event.cpp"
+#include "common/io_uring_manager.cpp"
+#include "common/inet_socket_read_write_event_http.cpp"
+#include "common/inet_socket_read_write_event_httpc.cpp"
+#include "common/http_manager.cpp"
+#include "reverse_proxy_manager.cpp"
 
 class ReverseProxyServer : public IoEvent {
 public:

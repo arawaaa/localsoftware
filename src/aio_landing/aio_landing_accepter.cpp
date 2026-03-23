@@ -7,10 +7,10 @@
 #include <arpa/inet.h>
 #include <variant>
 
-#include "aio_landing_server.hpp"
-#include "common/defs.hpp"
-#include "common/io_uring_manager.hpp"
-#include "s40_client.hpp"
+#include "aio_landing_server.cpp"
+#include "common/defs.cpp"
+#include "common/io_uring_manager.cpp"
+#include "s40_client.cpp"
 
 using namespace std;
 

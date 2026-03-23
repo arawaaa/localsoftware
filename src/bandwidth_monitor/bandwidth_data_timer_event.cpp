@@ -1,8 +1,8 @@
 #pragma once
 
-#include "common/defs.hpp"
-#include "common/io_event.hpp"
-#include "common/io_uring_manager.hpp"
+#include "common/defs.cpp"
+#include "common/io_event.cpp"
+#include "common/io_uring_manager.cpp"
 #include <ctime>
 #include <sys/timerfd.h>
 

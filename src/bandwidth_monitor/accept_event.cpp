@@ -5,9 +5,9 @@
 #include <iostream>
 #include <cstring>
 
-#include "common/io_event.hpp"
-#include "common/io_uring_manager.hpp"
-#include "bandwidth_monitoring_server.hpp"
+#include "common/io_event.cpp"
+#include "common/io_uring_manager.cpp"
+#include "bandwidth_monitoring_server.cpp"
 
 using namespace std;
 

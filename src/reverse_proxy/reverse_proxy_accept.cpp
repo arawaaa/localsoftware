@@ -6,11 +6,11 @@
 #include <cstring>
 #include <format>
 
-#include "common/io_event.hpp"
-#include "common/io_uring_manager.hpp"
-#include "common/http_manager.hpp"
-#include "reverse_proxy_server.hpp"
-#include "reverse_proxy_manager.hpp"
+#include "common/io_event.cpp"
+#include "common/io_uring_manager.cpp"
+#include "common/http_manager.cpp"
+#include "reverse_proxy_server.cpp"
+#include "reverse_proxy_manager.cpp"
 
 using namespace std;
 constexpr string password = "arnavopenclaw";

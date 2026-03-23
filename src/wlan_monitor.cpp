@@ -15,10 +15,10 @@
 
 #include <openssl/sha.h>
 
-#include "common/io_uring_manager.hpp"
-#include "bandwidth_monitor/accept_event.hpp"
-#include "aio_landing/aio_landing_accepter.hpp"
-#include "reverse_proxy/reverse_proxy_accept.hpp"
+#include "common/io_uring_manager.cpp"
+#include "bandwidth_monitor/accept_event.cpp"
+#include "aio_landing/aio_landing_accepter.cpp"
+#include "reverse_proxy/reverse_proxy_accept.cpp"
 
 using namespace std;
 

@@ -7,8 +7,8 @@
 #include <typeindex>
 #include <liburing.h>
 
-#include "file.hpp"
-#include "defs.hpp"
+#include "file.cpp"
+#include "defs.cpp"
 
 using namespace std;
 

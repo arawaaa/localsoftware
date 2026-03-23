@@ -6,10 +6,10 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 
-#include "defs.hpp"
-#include "common/inet_socket_read_write_event_bytes.hpp"
-#include "io_event.hpp"
-#include "io_uring_manager.hpp"
+#include "defs.cpp"
+#include "inet_socket_read_write_event_bytes.cpp"
+#include "io_event.cpp"
+#include "io_uring_manager.cpp"
 
 #define MAXFRAMELENGTH (size_t)16384
 #define MAXUFRAMELENGTH (size_t)(16384 - 1024) // little bit of margin

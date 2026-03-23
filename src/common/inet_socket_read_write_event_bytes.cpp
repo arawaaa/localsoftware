@@ -3,9 +3,9 @@
 #include <cstdint>
 #include <utility>
 
-#include "io_event.hpp"
-#include "io_uring_manager.hpp"
-#include "defs.hpp"
+#include "io_event.cpp"
+#include "io_uring_manager.cpp"
+#include "defs.cpp"
 
 using namespace std;
 

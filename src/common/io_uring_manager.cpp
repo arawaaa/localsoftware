@@ -14,8 +14,8 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 
-#include "io_event.hpp"
-#include "defs.hpp"
+#include "io_event.cpp"
+#include "defs.cpp"
 
 using namespace std;
 

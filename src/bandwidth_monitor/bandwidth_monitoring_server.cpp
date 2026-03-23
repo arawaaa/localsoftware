@@ -8,15 +8,15 @@
 
 #include <openssl/sha.h>
 
-#include "bandwidth_data_timer_event.hpp"
-#include "common/defs.hpp"
-#include "common/inet_socket_read_write_event_bytes.hpp"
-#include "common/inet_socket_tls_event.hpp"
-#include "common/io_event.hpp"
-#include "common/io_uring_manager.hpp"
-#include "common/inet_socket_read_write_event_http.hpp"
-#include "common/inet_websocket_event.hpp"
-#include "common/http_manager.hpp"
+#include "bandwidth_data_timer_event.cpp"
+#include "common/defs.cpp"
+#include "common/inet_socket_read_write_event_bytes.cpp"
+#include "common/inet_socket_tls_event.cpp"
+#include "common/io_event.cpp"
+#include "common/io_uring_manager.cpp"
+#include "common/inet_socket_read_write_event_http.cpp"
+#include "common/inet_websocket_event.cpp"
+#include "common/http_manager.cpp"
 
 
 extern const std::string LOG_FILE;

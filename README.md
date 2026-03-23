@@ -7,7 +7,7 @@ Contains a authenticated reverse proxy implementation for OpenClaw access (inste
 Initial implementation was completed by Gemini 3 and I. It faithfully implemented my (bad) architecture. I subsequently made most changes by hand, not because Gemini was bad at software engineering, but because I like to program, architect and solve problems. I am now completing all changes on my own, unassisted by any AI coding tool.
 
 ## Compilation
-Compilation and transfer commands are in redeploy.sh.
+Compilation and transfer commands are in redeploy.sh. It's currently a unity build, the cmake doesn't actually work :(
 
 Requires Boost, C++26 and liburing, and {npm, mui, react} for the frontend.
 
