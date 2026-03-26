@@ -35,7 +35,6 @@ public:
     void on_new_data(int, EventType event) override {
         auto res = get<ChildTaskCompletion>(event);
         if (res.return_code <= 0) {
-            cout << "CLOSE " << res.task_id << endl;
             IoUringManager::getInstance().finalize_current_task(true, -1);
             return;
         }
@@ -146,8 +145,6 @@ public:
                     check_websocket_ = false;
                 }
 
-                cout << res.task_id << ' ' << e_to_i_ << ' ' << i_to_e_ << ' ' << e_read_ << ' ' << i_read_ << endl;
-
                 if (res.task_id == e_to_i_) {
                     if (e_read_) {
                         auto [eid, _] = IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventBytes>(
@@ -196,11 +193,8 @@ public:
                     }
                 }
 
-                cout <<e_to_i_ << ' ' << i_to_e_ << endl;
-
             }
         }
-        IoUringManager::getInstance().consume_event(res.task_id);
     }
 
     string get_info() const override { return "ReverseProxyServer FD " + to_string(files_[0]->get()); }

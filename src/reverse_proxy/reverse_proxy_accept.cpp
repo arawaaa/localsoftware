@@ -73,7 +73,6 @@ public:
             std::cout << "Connection close" << std::endl;
             auto res = get<ChildTaskCompletion>(event);
             IoUringManager::getInstance().free_child_event_for_taskid<ReverseProxyServer>(this, res.task_id);
-            IoUringManager::getInstance().consume_event(res.task_id);
         } else {
             int res = get<IoUringResult>(event).res;
             if (res >= 0) {

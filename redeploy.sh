@@ -1,15 +1,27 @@
 #!/bin/bash
 
 # Cross-compile
-clang++ --target=arm-linux-gnueabihf --sysroot=./rpi-sysroot \
-    -fuse-ld=lld -Wextra -Wno-deprecated-declarations \
-    -I./rpi-sysroot/usr/include \
-    -I./src \
-    -L./rpi-sysroot/usr/lib/arm-linux-gnueabihf \
-    -L./rpi-sysroot/lib/arm-linux-gnueabihf \
-    -luring -lssl -lcrypto -lpthread -latomic -lboost_json \
-    -std=c++23 \
-    src/wlan_monitor.cpp -o wlan_monitor_bin\
+if [ "$1" == "o" ]; then
+    clang++ --target=arm-linux-gnueabihf --sysroot=./rpi-sysroot \
+        -fuse-ld=lld -Wall -Wextra -Wno-deprecated-declarations -O3 -flto \
+        -I./rpi-sysroot/usr/include \
+        -I./src \
+        -L./rpi-sysroot/usr/lib/arm-linux-gnueabihf \
+        -L./rpi-sysroot/lib/arm-linux-gnueabihf \
+        -luring -ltbb -lssl -lcrypto -lpthread -latomic -lboost_json \
+        -std=c++26 \
+        src/wlan_monitor.cpp -o wlan_monitor_bin
+else
+    clang++ --target=arm-linux-gnueabihf --sysroot=./rpi-sysroot \
+        -fuse-ld=lld -Wall -Wextra -Wno-deprecated-declarations \
+        -I./rpi-sysroot/usr/include \
+        -I./src \
+        -L./rpi-sysroot/usr/lib/arm-linux-gnueabihf \
+        -L./rpi-sysroot/lib/arm-linux-gnueabihf \
+        -luring -ltbb -lssl -lcrypto -lpthread -latomic -lboost_json \
+        -std=c++26 \
+        src/wlan_monitor.cpp -o wlan_monitor_bin
+fi
 
 if [ $? -ne 0 ]; then
     echo "Compilation failed"
@@ -25,8 +37,8 @@ if [ $? -ne 0 ]; then
 fi
 cd ..
 
-# Transfer
-sshpass -p 'rapi' scp -r -o StrictHostKeyChecking=no wlan_monitor_bin \
+# Transfer (ls-pi is a ssh alias for my server)
+scp -r wlan_monitor_bin \
     src/bandwidth_monitor/monitoringindex.html \
     src/reverse_proxy/proxyindex.html \
     src/reverse_proxy/proxy.config \
@@ -35,10 +47,10 @@ sshpass -p 'rapi' scp -r -o StrictHostKeyChecking=no wlan_monitor_bin \
     config/98-update-vpn \
     config/99-update-dnsmasq-relay \
     frontend/build/client \
-    rapi@192.168.12.223:~/
+    ls-pi:~/
 
 # Deploy and restart
-sshpass -p 'rapi' ssh -o StrictHostKeyChecking=no rapi@192.168.12.223 "sudo -S mv /home/rapi/wlan_monitor_bin /usr/local/bin/wlan_monitor && \
+ssh ls-pi "sudo -S mv /home/rapi/wlan_monitor_bin /usr/local/bin/wlan_monitor && \
 sudo mkdir -p /srv/landing && \
 sudo mkdir -p /srv/bwith && \
 sudo mkdir -p /srv/rp && \

@@ -90,7 +90,6 @@ public:
         } else {
             handle_write(res.return_code);
         }
-        IoUringManager::getInstance().consume_event(res.task_id);
     }
 
     string get_info() const override {

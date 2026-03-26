@@ -18,6 +18,25 @@ enum RequestID {
 
 enum class CallStatus { Failed, Running, Finished, Stopped };
 
+struct EventData {
+    int op;
+    uint64_t running_id;
+    IoEvent* event;
+};
+
+struct Timer {
+    uint64_t timer_id;
+    uint64_t running_id;
+};
+
+struct TimerUpdate {
+    bool remove;
+};
+
+struct IoUringAttached {
+    std::variant<EventData, Timer, TimerUpdate> data;
+};
+
 struct IoUringResult {
     uint64_t calling_id;
     int res;
@@ -34,7 +53,11 @@ struct ChildTaskCompletion {
     int return_code;
 };
 
-using EventType = variant<IoUringResult, Wakeup, ChildTaskCompletion>;
+struct Timeout {
+    uint64_t timer_id;
+};
+
+using EventType = variant<Timeout, IoUringResult, Wakeup, ChildTaskCompletion>;
 
 enum OpHint {
     OP_HINT_NONE = 0,
@@ -63,12 +86,6 @@ struct CallData {
     int return_code;
     IoEvent* event;
     uint64_t thread_id;
-};
-
-struct EventData {
-    int op;
-    uint64_t running_id;
-    IoEvent* event;
 };
 
 struct GetDataInfo {
