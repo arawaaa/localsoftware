@@ -2,6 +2,24 @@ import { Container, Typography, Grid, Card, CardContent, Button } from '@mui/mat
 
 const writings = [
   {
+    title: "On Wet T-Shirt Contests",
+    description: "What explains wet t-shirt contests and how do similar events relate to the concept of cybernetics, wireheading? How do people voluntarily perform in such contests?",
+    link: "/WetT-Shirt.pdf",
+    date: "March 31 2026"
+  },
+  {
+    title: "Knowing the Ultimate Form of Reality",
+    description: "What is the ultimate form of reality, and what are the obstacles to understanding it? Why we may live in a quantum multiverse according to the Schrodinger's equation. Being thankful for the miracle of our existence.",
+    link: "/TrueNature.pdf",
+    date: "March 29 2026"
+  },
+  {
+    title: "Religiosity and Transhumanism",
+    description: "What are the parallels between transhumanism and religion? Is transhumanism, and more broadly, science, also a religion?",
+    link: "/ReligiosityH+.pdf",
+    date: "March 24 2026"
+  },
+  {
     title: 'Note on Efficacy of ML and Beautiful Algos',
     description: "A short note on how ML and gradient descent can exploit low-dimensional manifolds to solve very difficult problems, in many cases, converge to very clean representations (i.e. very few to no heuristics) with high accuracy and speed. Does this imply that, e.x. object recognition, CFD can have clean, beautiful, non-neural algorithms as well? What does this imply about the existence of low-dimensional structure in almost everything? Are the learned algorithms even comprehensible, or are they going to remain as indecipherable matrices of floating point numbers?",
     link: '/BeautifulAlgo.pdf',
