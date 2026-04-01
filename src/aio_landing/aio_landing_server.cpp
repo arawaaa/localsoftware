@@ -63,17 +63,13 @@ public:
 
 private:
     void handle_request(boost::beast::http::request_parser<boost::beast::http::string_body>::value_type& req) {
-        if (req.method() == http::verb::get) {
-            IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventHTTP>(
-                this,
-                0,
-                &InetSocketReadWriteEventHTTP::write_http,
-                http_manager_.handle_request(req)
-            );
-            op_read_ = false;
-        } else {
-            IoUringManager::getInstance().finalize_current_task(true, -1);
-        }
+        IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventHTTP>(
+            this,
+            0,
+            &InetSocketReadWriteEventHTTP::write_http,
+            http_manager_.handle_request(req)
+        );
+        op_read_ = false;
     }
 
     void handle_response() {
@@ -85,7 +81,7 @@ private:
         op_read_ = true;
     }
 
-    const __kernel_timespec ts = {.tv_sec = 60, .tv_nsec=0};
+    const __kernel_timespec ts = {.tv_sec = 180, .tv_nsec=0};
     bool op_read_;
     const HTTPManager& http_manager_;
     uint64_t timer_ = 0;

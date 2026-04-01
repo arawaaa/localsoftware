@@ -220,7 +220,6 @@ private:
     bool init_peer() {
         struct addrinfo hints, *res, *result;
         int errcode;
-        void *ptr;
 
         memset (&hints, 0, sizeof (hints));
         hints.ai_family = PF_UNSPEC;

@@ -19,6 +19,7 @@
 #include "bandwidth_monitor/accept_event.cpp"
 #include "aio_landing/aio_landing_accepter.cpp"
 #include "reverse_proxy/reverse_proxy_accept.cpp"
+#include "logging/visit_stats.cpp"
 
 using namespace std;
 
@@ -81,7 +82,11 @@ void log_entry(time_t ts, int d, int m, int y, int h, unsigned long long tx, uns
           << setw(2) << setfill('0') << m << "/"
           << y << " " << h << " " << tx << " " << rx << "\n";
     }
+
+    ofstream f2("/var/log/wlan_monitor/access.log", ios::out);
+    VisitStats::getInstance().get_pretty_stats(f2);
 }
+
 int setup_server_socket6(int port) {
     int server_fd;
     struct sockaddr_in6 address{
@@ -160,90 +165,51 @@ int setup_server_socket(int port) {
 
 void server_func() {
     // Single stack IPv6 for all surfaces outside of homepage, which is dual-stack
-    int ws_fd = setup_server_socket(SERVER_PORT);
-    if (ws_fd < 0) return;
+    shared_ptr<File> ws_fd = make_shared<File>(setup_server_socket(SERVER_PORT));
+    if (ws_fd->get() < 0) return;
 
-    int ws6_fd = setup_server_socket6(SERVER_PORT);
-    if (ws_fd < 0) {
-        close(ws_fd);
-        return;
-    };
+    shared_ptr<File> ws6_fd = make_shared<File>(setup_server_socket6(SERVER_PORT));
+    if (ws6_fd->get() < 0) return;
 
-    int http6_fd = setup_server_socket6(HTTP_PORT);
-    if (http6_fd < 0) {
-        close(ws_fd);
-        close(ws6_fd);
-        return;
-    }
+    shared_ptr<File> http6_fd = make_shared<File>(setup_server_socket6(HTTP_PORT));
+    if (http6_fd->get() < 0) return;
 
-    int http_fd = setup_server_socket(HTTP_PORT);
-    if (http_fd < 0) {
-        close(http6_fd);
-        close(ws6_fd);
-        close(ws_fd);
-        return;
-    }
+    shared_ptr<File> http_fd = make_shared<File>(setup_server_socket(HTTP_PORT));
+    if (http_fd->get() < 0) return;
 
-    int https_fd = setup_server_socket(HTTPS_PORT);
-    if (https_fd < 0) {
-        close(http6_fd);
-        close(http_fd);
-        close(ws6_fd);
-        close(ws_fd);
-        return;
-    }
+    shared_ptr<File> https_fd = make_shared<File>(setup_server_socket(HTTPS_PORT));
+    if (https_fd->get() < 0) return;
 
-    int https6_fd = setup_server_socket6(HTTPS_PORT);
-    if (https_fd < 0) {
-        close(https_fd);
-        close(http6_fd);
-        close(http_fd);
-        close(ws6_fd);
-        close(ws_fd);
-        return;
-    }
+    shared_ptr<File> https6_fd = make_shared<File>(setup_server_socket6(HTTPS_PORT));
+    if (https6_fd->get() < 0) return;
 
-    int rphttps_fd = setup_server_socket(RP_PORT);
-    if (rphttps_fd < 0) {
-        close(http6_fd);
-        close(https_fd);
-        close(http6_fd);
-        close(http_fd);
-        close(ws6_fd);
-        close(ws_fd);
-    }
-
-    cout << "HTTP Bandwidth data server listening on port " << SERVER_PORT << endl;
-    cout << "HTTP Landing Server listening on port " << HTTP_PORT << endl;
-    cout << "HTTPS Landing Server listening on port " << HTTPS_PORT << endl;
-    cout << "HTTPS Reverse Proxy listening on port " << RP_PORT << endl;
+    shared_ptr<File> rphttps_fd = make_shared<File>(setup_server_socket(RP_PORT));
+    if (rphttps_fd->get() < 0) return;
 
     // Initialize io_uring
     struct io_uring ring;
     if (io_uring_queue_init(512, &ring, 0) < 0) {
         perror("io_uring_queue_init");
-        close(ws_fd);
-        close(http_fd);
         return;
     }
 
     auto& instance = IoUringManager::getInstance();
     // Setup WebSocket Accept Event
-    auto ws_files = {make_shared<File>(ws_fd), make_shared<File>(ws6_fd)};
+    auto ws_files = {ws_fd, ws6_fd};
     auto res = instance.initialize_root_event<BandwidthMonitorAcceptEvent>(ws_files, true, "/srv/bwith");
     instance.call_root_function<BandwidthMonitorAcceptEvent>(res, &BandwidthMonitorAcceptEvent::prepare_accept);
 
     // Setup HTTP Landing Accept Event
-    vector<shared_ptr<File>> http_files = {make_shared<File>(http_fd), make_shared<File>(http6_fd)};
+    vector<shared_ptr<File>> http_files = {http_fd, http6_fd};
     res = instance.initialize_root_event<AioLandingAcceptEvent>(http_files, false, "/srv/landing");
     instance.call_root_function<AioLandingAcceptEvent>(res, &AioLandingAcceptEvent::prepare_accept);
 
     // Setup HTTPS Landing Accept Event
-    vector<shared_ptr<File>> https_files = {make_shared<File>(https_fd), make_shared<File>(https6_fd)};
+    vector<shared_ptr<File>> https_files = {https_fd, https6_fd};
     res = instance.initialize_root_event<AioLandingAcceptEvent>(https_files, true, "/srv/landing");
     instance.call_root_function<AioLandingAcceptEvent>(res, &AioLandingAcceptEvent::prepare_accept);
 
-    vector<shared_ptr<File>> rp_files = {make_shared<File>(rphttps_fd)};
+    vector<shared_ptr<File>> rp_files = {rphttps_fd};
     res = instance.initialize_root_event<ReverseProxyAccept>(rp_files, "/srv/rp");
     instance.call_root_function<ReverseProxyAccept>(res, &ReverseProxyAccept::prepare_accept);
 
@@ -255,8 +221,17 @@ void server_func() {
 }
 
 int main() {
-    cout << "Starting bandwidth monitor for " << INTERFACE << "..." << endl;
-    cout << "Logging hourly and daily totals to " << LOG_FILE << endl;
+    cout << "       /      //------   localsoftware: an io-uring web-server, proxy, and more\n" <<
+            "      /     ///          © Arnav Rawat, GPLv3\n" <<
+            "     /      //           github.com/arawaaa/localsoftware\n" <<
+            "    /       /------/     handmade\n" <<
+            "   /              //     \n" <<
+            "  /              ///     \n" <<
+            " /-----   ------//       \n";
+
+    cout << "Bandwidth Monitor (HTTPS): " << SERVER_PORT << " | ";
+    cout << "Landing Server (HTTP, HTTPS): " << HTTP_PORT << ", " << HTTPS_PORT << " | ";
+    cout << "Reverse Proxy (HTTPS): " << RP_PORT << endl;
     
     // Start unified io_uring server thread
     thread server_t(server_func);

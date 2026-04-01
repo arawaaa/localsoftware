@@ -26,8 +26,7 @@ public:
         return {"BandwidthDataTimer timeout", true, 0};
     }
 
-    void on_new_data(int, EventType ev) override {
-        auto res = std::get<IoUringResult>(ev);
+    void on_new_data(int, EventType) override {
         IoUringManager::getInstance().finalize_current_task(false, 1);
     };
 

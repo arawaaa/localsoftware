@@ -17,7 +17,7 @@ using namespace std;
 class AioLandingAcceptEvent : public IoEvent {
 public:
     AioLandingAcceptEvent(vector<shared_ptr<File>> server_file, bool use_tls, const string& base_dir)
-        : IoEvent(server_file), use_tls_(use_tls), http_manager_(base_dir)
+        : IoEvent(server_file), use_tls_(use_tls), http_manager_(base_dir, use_tls ? "https" : "http")
     {
         client_addr_len_ = sizeof(client_addr_);
 
@@ -27,36 +27,26 @@ public:
         };
 
         http_manager_.add_endpoint("/temperature", [keep_alive_headers](const auto& req) {
-            if (req.method() != http::verb::get)
-                return HTTPManager::prepare_response(keep_alive_headers, http::status::method_not_allowed, "", req.version());
             return HTTPManager::prepare_response(keep_alive_headers, http::status::ok,
                 to_string(S40Client::getInstance().get_temperature()), req.version());
         });
 
         http_manager_.add_endpoint("/humidity", [keep_alive_headers](const auto& req) {
-            if (req.method() != http::verb::get)
-                return HTTPManager::prepare_response(keep_alive_headers, http::status::method_not_allowed, "", req.version());
             return HTTPManager::prepare_response(keep_alive_headers, http::status::ok,
                 to_string(S40Client::getInstance().get_humidity()), req.version());
         });
 
         http_manager_.add_endpoint("/setpoint", [keep_alive_headers](const auto& req) {
-            if (req.method() != http::verb::get)
-                return HTTPManager::prepare_response(keep_alive_headers, http::status::method_not_allowed, "", req.version());
             return HTTPManager::prepare_response(keep_alive_headers, http::status::ok,
                 to_string(S40Client::getInstance().get_setpoint()), req.version());
         });
 
         http_manager_.add_endpoint("/mode", [keep_alive_headers](const auto& req) {
-            if (req.method() != http::verb::get)
-                return HTTPManager::prepare_response(keep_alive_headers, http::status::method_not_allowed, "", req.version());
             return HTTPManager::prepare_response(keep_alive_headers, http::status::ok,
                 S40Client::getInstance().get_mode(), req.version());
         });
 
         http_manager_.add_endpoint("/fan", [keep_alive_headers](const auto& req) {
-            if (req.method() != http::verb::get)
-                return HTTPManager::prepare_response(keep_alive_headers, http::status::method_not_allowed, "", req.version());
             return HTTPManager::prepare_response(keep_alive_headers, http::status::ok,
                 to_string(S40Client::getInstance().get_fan()), req.version());
         });

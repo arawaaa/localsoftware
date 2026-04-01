@@ -106,7 +106,6 @@ private:
     HTTPManager http_manager_;
     ReverseProxyManager proxy_manager_;
     string proxyto_;
-    int proxyport_;
     struct sockaddr_in client_addr_{};
     socklen_t client_addr_len_;
 };

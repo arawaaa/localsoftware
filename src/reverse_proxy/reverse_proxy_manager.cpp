@@ -25,7 +25,6 @@ public:
         mt19937 engine(device());
         uniform_int_distribution distrib(0, 15);
         timespec time;
-        auto current_time = time.tv_sec;
         clock_gettime(CLOCK_MONOTONIC, &time);
 
         string ret(32, '\0');

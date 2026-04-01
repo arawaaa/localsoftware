@@ -3,7 +3,11 @@
 #include <string>
 #include <list>
 #include <cstdint>
+#include <typeindex>
 #include <variant>
+#include <utility>
+
+#include <oneapi/tbb.h>
 
 using namespace std;
 
@@ -17,6 +21,20 @@ enum RequestID {
 };
 
 enum class CallStatus { Failed, Running, Finished, Stopped };
+
+struct ConstructorCall {
+    function<IoEvent*()> constructor;
+    uint64_t object_id;
+    type_index idx;
+};
+
+struct FunctionCall {
+
+};
+
+struct QueueContainer {
+    oneapi::tbb::concurrent_queue<ConstructorCall> a;
+};
 
 struct EventData {
     int op;

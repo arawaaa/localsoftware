@@ -159,7 +159,7 @@ protected:
         Content
     };
 
-    void arm_read(int len, int ) {
+    void arm_read(int, int) {
         if (tls_enabled_) {
             auto [taskid, success] = IoUringManager::getInstance().call_dependent_function<InetSocketTLSEvent>(
                 this,

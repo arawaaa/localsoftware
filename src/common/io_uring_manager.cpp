@@ -174,13 +174,13 @@ public:
             // Ensure pending submissions are sent
             submit_events(ring);
 
-            io_uring_cqe *cqe[16] = {nullptr};
+            io_uring_cqe *cqe[128] = {nullptr};
             __kernel_timespec ts ={
                 .tv_sec = 10,
                 .tv_nsec = 0
             };
             // Wait for completions
-            if (io_uring_wait_cqes_min_timeout(ring, cqe, 16, &ts, 200, nullptr) < 0) {
+            if (io_uring_wait_cqes_min_timeout(ring, cqe, 128, &ts, 200, nullptr) < 0) {
                 continue;
             }
 

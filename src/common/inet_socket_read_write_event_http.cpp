@@ -105,6 +105,9 @@ protected:
 
     bool tls_enabled_;
 
+    /**
+     * @brief Handle read operation, and commit to buffer if new bytes present
+     */
     void handle_read(int res) {
         if (res > 0) {
             buffer_.commit(res);
@@ -119,6 +122,9 @@ protected:
         arm_read();
     }
 
+    /**
+     * @brief Write out entire buffer
+     */
     void handle_write(int res) {
         if (res > 0) {
             write_buffer_.consume(res);
@@ -181,6 +187,9 @@ protected:
         }
     }
 
+    /**
+     * @brief Parse request incrementally, signalling to requeue if incomplete
+     */
     bool try_parse() {
         boost::system::error_code ec;
         size_t consumed = parser_->put(buffer_.data(), ec);

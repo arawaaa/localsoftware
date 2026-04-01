@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <string>
 #include <filesystem>
 #include <fstream>
@@ -7,9 +8,11 @@
 #include <map>
 #include <vector>
 #include <utility>
+#include <iostream>
 
 #include <boost/beast/http.hpp>
-#include <iostream>
+#include <logging/visit_stats.cpp>
+
 namespace http = boost::beast::http;
 using namespace std;
 namespace fs = std::filesystem;
@@ -18,15 +21,10 @@ class HTTPManager {
 public:
     using Handler = function<http::response<http::string_body>(const http::request<http::string_body>&)>;
 
-    explicit HTTPManager(const string& base_dir) {
-        try {
-            base_path_ = fs::canonical(base_dir);
-        } catch (const exception& e) {
-            // If the base directory doesn't exist or is invalid, 
-            // we'll store the absolute path and hope for the best, 
-            // or let future operations fail.
-            base_path_ = fs::absolute(base_dir);
-        }
+    explicit HTTPManager(const string& base_dir, string name = {}) {
+        base_path_ = fs::canonical(base_dir);
+        service_ = base_path_.string() + ":" + name;
+        VisitStats::getInstance().register_service(service_);
     }
 
     void add_endpoint(string endpoint, Handler handler, http::verb verb = http::verb::get) {
@@ -123,6 +121,7 @@ public:
         // Check for custom handlers
         if (auto it = handlers_.find(target); it != handlers_.end()) {
             if constexpr (is_same_v<Body, http::string_body>) {
+                VisitStats::getInstance().add_access(service_, target);
                 if (it->second.contains(req.method())) {
                     return it->second.at(req.method())(req);
                 } else {
@@ -143,6 +142,8 @@ public:
                 string content;
                 content.resize(fs::file_size(canonical_path));
                 ifs.read(&content[0], content.size());
+
+                VisitStats::getInstance().add_access(service_, canonical_path);
 
                 auto headers = get_response_headers(req);
                 headers.emplace_back(http::field::content_type, get_mime_type(canonical_path));
@@ -179,6 +180,7 @@ public:
     }
 
 private:
+    string service_;
     fs::path base_path_;
     map<string, map<http::verb, Handler>> handlers_;
 
