@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+#include <new>
 #include <variant>
 #include <vector>
 #include <functional>
@@ -11,6 +13,7 @@
 #include <liburing.h>
 #include <ranges>
 #include <functional>
+#include <iostream>
 
 #include <oneapi/tbb.h>
 #include <openssl/ssl.h>
@@ -22,11 +25,13 @@
 using namespace std;
 
 class IoUringManager {
+    template<class... Ts>
+    struct overloaded : Ts... { using Ts::operator()...; };
 public:
     friend class IoEvent;
 
-    static IoUringManager& getInstance() {
-        static IoUringManager instance;
+    static IoUringManager& getInstance(int ts = 1) {
+        static IoUringManager instance(ts);
         return instance;
     }
 
@@ -36,6 +41,11 @@ public:
     // Do not queue any async functions in the constructor
     template <typename T, typename... Args>
     size_t initialize_dependent_event(IoEvent* parent, Args&&... args) {
+        // TODO Fix mutable
+        auto construct = [args...] () mutable -> shared_ptr<IoEvent> {
+            return make_shared<T>(std::forward<Args>(args)...);
+        };
+
         auto ev = make_shared<T>(std::forward<Args>(args)...);
         ev->uring_data_.outer_event = parent;
         for (auto [idx, shared_ptr] : views::enumerate(parent->uring_data_.events[type_index(typeid(T))])) {
@@ -169,12 +179,16 @@ public:
         a->second.return_code = return_code;
     }
 
-    void run(io_uring* ring) {
+    void run(io_uring* ring, int tid) {
+        unordered_map<uint64_t, CallData> proc_to_dat;
+        unordered_map<uint64_t, shared_ptr<IoEvent>> id_to_ev;
+        io_uring_cqe *cqe[128] = {nullptr};
+
+
         while (true) {
             // Ensure pending submissions are sent
             submit_events(ring);
 
-            io_uring_cqe *cqe[128] = {nullptr};
             __kernel_timespec ts ={
                 .tv_sec = 10,
                 .tv_nsec = 0
@@ -184,8 +198,43 @@ public:
                 continue;
             }
 
+            // Multithreading support
+            goto jump;
+            {
+            PerThread& tdata = per_thread_data[tid];
+
+            variant<monostate, ConstructorCall, FunctionCall, ProcedureUpdate, Delete, Data> result;
+            tdata.q.pop(result);
+
+            visit(overloaded {
+                [&id_to_ev] (ConstructorCall& construct) mutable {
+                    id_to_ev.emplace(construct.object_id, construct.constructor());
+                },
+                [this, &id_to_ev] (FunctionCall& func) {
+                    CallResponse resp = func.call(id_to_ev[func.object_id]);
+                    per_thread_data[func.ci.thread_id].q.push(
+                        ProcedureUpdate {ProcedureUpdate::Type::StartConfirm, func.ci.obj_id, resp}
+                    );
+                },
+                [&id_to_ev] (ProcedureUpdate& upd) {
+                    id_to_ev[upd.object_id]->procedure_update(upd.type, upd.resp);
+                },
+                [&id_to_ev] (Delete& del) mutable {
+                    id_to_ev.erase(del.object_id);
+                },
+                [] (Data& on_data) {
+
+                },
+                [] (monostate) {
+
+                }
+            }, result);
+
+            }
+            jump:
+
             int i = 0;
-            for (auto ptr = cqe; *ptr; ptr++) {
+            for (auto ptr = cqe; *ptr && ptr < cqe + 128; ptr++) {
                 IoUringAttached* uringdata = reinterpret_cast<IoUringAttached*>(io_uring_cqe_get_data(*ptr));
                 if (holds_alternative<EventData>(uringdata->data)) {
                     EventData& data = std::get<EventData>(uringdata->data);
@@ -372,7 +421,8 @@ private:
 
             // HACK TODO Make this actually correct, threading friendly, with work queues
             CallMap::accessor a;
-            call_map_.find(a, finished_id);
+            if (!call_map_.find(a, finished_id))
+                continue;
             auto& data = a->second;
             a.release();
 
@@ -403,7 +453,7 @@ private:
         }
     }
 
-    IoUringManager() {
+    IoUringManager(int ts): per_thread_data(ts) {
         tls_ctx_ = SSL_CTX_new(TLS_server_method());
         if (tls_ctx_ == NULL) {
             throw runtime_error{"Unable to create libssl context"};
@@ -443,6 +493,21 @@ private:
     uint64_t next_timer_ = 1;
     uint64_t running_id_ = 0;
     queue<uint64_t> propagation_queue_;
+
+    struct alignas(hardware_destructive_interference_size) PerThread {
+        typedef variant<monostate, ConstructorCall, FunctionCall, ProcedureUpdate, Delete, Data> EventVariant;
+        typedef oneapi::tbb::concurrent_bounded_queue<EventVariant> WorkQueue;
+        WorkQueue q;
+
+        mutex stats;
+        bool idle = true;
+        size_t num_ev;
+        float load_avg = 0.0;
+    };
+
+    vector<PerThread> per_thread_data;
+
+
     typedef oneapi::tbb::concurrent_hash_map<uint64_t, CallData> CallMap;
     typedef oneapi::tbb::concurrent_hash_map<uint64_t, IoUringAttached*> TimerMap;
     TimerMap timer_map_;

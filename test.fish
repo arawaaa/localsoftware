@@ -1,7 +1,7 @@
 #!/usr/bin/env fish
 
-set target_url "https://rapi.local"
-set num_requests 10000
+set target_url "https://arnavrawat.xyz"
+set num_requests 200
 set temp_file (mktemp)
 
 echo "Starting $num_requests parallel requests to $target_url..."

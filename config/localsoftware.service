@@ -1,0 +1,14 @@
+[Unit]
+Description=Localsoftware: Web server and other utilities
+After=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/localsoftware
+WorkingDirectory=/srv
+Restart=always
+User=rapi
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

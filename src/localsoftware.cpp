@@ -1,3 +1,4 @@
+#include <chrono>
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -193,7 +194,7 @@ void server_func() {
         return;
     }
 
-    auto& instance = IoUringManager::getInstance();
+    auto& instance = IoUringManager::getInstance(1);
     // Setup WebSocket Accept Event
     auto ws_files = {ws_fd, ws6_fd};
     auto res = instance.initialize_root_event<BandwidthMonitorAcceptEvent>(ws_files, true, "/srv/bwith");
@@ -215,7 +216,7 @@ void server_func() {
 
     instance.submit_events(&ring);
 
-    instance.run(&ring);
+    instance.run(&ring, 0);
 
     io_uring_queue_exit(&ring);
 }
@@ -289,7 +290,7 @@ int main() {
                 log_entry(now, cur_mday, cur_mon, cur_year, 24, daily_tx, daily_rx);
                 daily_rx = 0;
                 daily_tx = 0;
-                
+
                 cur_mday = t->tm_mday;
                 cur_mon = t->tm_mon + 1;
                 cur_year = t->tm_year + 1900;

@@ -38,6 +38,12 @@ public:
 
     virtual string get_info() const = 0;
 
+    constexpr virtual bool is_thread_safe() {
+        return false;
+    }
+
+    virtual void procedure_update(ProcedureUpdate::Type, CallResponse) {}
+
     IoUringData uring_data_;
 
 protected:
