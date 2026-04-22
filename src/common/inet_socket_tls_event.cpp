@@ -77,9 +77,9 @@ public:
         }
 
         if (res.calling_id == task_read_) {
-            handle_read();
+            return handle_read();
         } else if (res.calling_id == task_write_) {
-            handle_write();
+            return handle_write();
         } else {
             throw runtime_error{"Unknown task type"};
         }
@@ -201,6 +201,7 @@ protected:
                     return pair{true, -1};
             }
         }
+        return nullopt;
     }
 
     void arm_read() {

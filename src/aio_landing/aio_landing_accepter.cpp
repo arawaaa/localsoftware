@@ -10,7 +10,6 @@
 
 #include "aio_landing_server.cpp"
 #include "common/defs.cpp"
-#include "common/io_uring_manager.cpp"
 #include "s40_client.cpp"
 
 using namespace std;
@@ -53,7 +52,7 @@ public:
         });
     }
 
-    CallResponse prepare_accept(uint64_t taskid) {
+    CallResponse init(uint64_t taskid) {
         taskid_ = taskid;
         queue_accept(0);
         queue_accept(1);
@@ -89,6 +88,7 @@ public:
             // Re-arm immediately
             queue_accept(uri_res.op);
         }
+        return nullopt;
     }
 
     string get_info() const override { return "LandingAccept FD " + to_string(files_[0]->get()); }

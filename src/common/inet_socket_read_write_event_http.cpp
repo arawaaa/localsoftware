@@ -10,7 +10,6 @@
 
 #include "inet_socket_read_write_event_bytes.cpp"
 #include "io_event.cpp"
-#include "io_uring_manager.cpp"
 #include "inet_socket_tls_event.cpp"
 #include "defs.cpp"
 
@@ -85,11 +84,10 @@ public:
         }
 
         if (read_op_) {
-            handle_read(res.return_code);
+            return handle_read(res.return_code);
         } else {
-            handle_write(res.return_code);
+            return handle_write(res.return_code);
         }
-        return nullopt;
     }
 
     string get_info() const override {
@@ -108,57 +106,43 @@ protected:
     /**
      * @brief Handle read operation, and commit to buffer if new bytes present
      */
-    void handle_read(int res) {
+    optional<pair<bool, int>> handle_read(int res) {
         if (res > 0) {
             buffer_.commit(res);
         }
 
         bool done = try_parse();
         if (done) {
-            AsyncHandler::self().finalize_current_task(false, 1);
-            return;
+            return pair{false, 1};
         }
 
         arm_read();
+        return nullopt;
     }
 
     /**
      * @brief Write out entire buffer
      */
-    void handle_write(int res) {
+    optional<pair<bool, int>> handle_write(int res) {
         if (res > 0) {
             write_buffer_.consume(res);
         }
 
         if (write_buffer_.size() > 0) {
             arm_write();
-            return;
+            return nullopt;
         }
-        AsyncHandler::self().finalize_current_task(false, 1);
+        return pair{false, -1};
     }
 
     void arm_read() {
         // Prepare space in the flat_buffer for the next read
         auto mutable_buffer = buffer_.prepare(4096);
         if (tls_enabled_) {
-            auto [taskid, success] = AsyncHandler::self().call_dependent_function<InetSocketTLSEvent>(
-                this,
-                0,
-                &InetSocketTLSEvent::read,
-                (char*)mutable_buffer.data(),
-                4096,
-                false
-            );
+            uint64_t taskid = c(&InetSocketTLSEvent::read, (char*)mutable_buffer.data(), 4096, false);
             taskid_reader_ = taskid;
         } else {
-            auto [taskid, success] = AsyncHandler::self().call_dependent_function<InetSocketReadWriteEventBytes>(
-                this,
-                0,
-                &InetSocketReadWriteEventBytes::read,
-                (char*)mutable_buffer.data(),
-                4096,
-                false
-            );
+            uint64_t taskid = c(&InetSocketReadWriteEventBytes::read, (char*)mutable_buffer.data(), 4096, false);
             taskid_reader_ = taskid;
         }
     }
@@ -166,22 +150,10 @@ protected:
     void arm_write() {
         if (write_buffer_.size() == 0) return;
         if (tls_enabled_) {
-            auto [taskid, success] = AsyncHandler::self().call_dependent_function<InetSocketTLSEvent>(
-                this,
-                0,
-                &InetSocketTLSEvent::write,
-                (char*)write_buffer_.data().data(),
-                write_buffer_.size()
-            );
+            uint64_t taskid = c(&InetSocketTLSEvent::write, (char*)write_buffer_.data().data(), write_buffer_.size());
             taskid_writer_ = taskid;
         } else {
-            auto [taskid, success] = AsyncHandler::self().call_dependent_function<InetSocketReadWriteEventBytes>(
-                this,
-                0,
-                &InetSocketReadWriteEventBytes::write,
-                (char*)write_buffer_.data().data(),
-                write_buffer_.size()
-            );
+            uint64_t taskid = c(&InetSocketReadWriteEventBytes::write, (char*)write_buffer_.data().data(), write_buffer_.size());
             taskid_writer_ = taskid;
 
         }

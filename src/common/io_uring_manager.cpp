@@ -42,6 +42,17 @@ public:
         return tls_ctx_;
     }
 
+    /**
+     * @brief Initializes the event, sends it to a thread
+     * The root event class MUST define init(uint64_t)
+     */
+    template <typename Obj, typename... Args>
+    void initialize_root_event(Args&&... args) {
+        auto f = [args...] mutable {
+            return make_shared<Obj>(std::forward<Args>(args)...);
+        };
+    }
+
     typedef unordered_map<uint64_t, CallDataThreaded> CallMap;
     typedef unordered_map<uint64_t, ObjectDataThreaded> ObjectMap;
     typedef unordered_map<uint64_t, TimerData> TimerMap;
@@ -99,6 +110,8 @@ private:
     atomic<uint64_t> proc_block_ = 0;
     atomic<uint64_t> obj_block_ = 0;
     atomic<uint64_t> timer_block_ = 0;
+
+    int pt_idx = 0;
 
     struct alignas(hardware_destructive_interference_size) PerThread {
         typedef variant<monostate, ConstructorCall, FunctionCall, ProcedureUpdate, Delete, Data> EventVariant;
@@ -216,11 +229,31 @@ class ThreadData {
                 }
 
                 for (auto [id, ts] : data.pending_timers) {
-                    io_uring_sqe* sqe = io_uring_get_sqe(data.ring);
-                    io_uring_prep_timeout(sqe, &ts, 0, 0);
-                    IoUringAttached* attached = new IoUringAttached;
-                    attached->data.emplace<Timer>(Timer {id, data.source_object, data.source_proc, ts});
-                    io_uring_sqe_set_data(sqe, attached);
+                    if (data.timers.contains(id)) {
+                        bool zeroed = ts.tv_nsec == 0 && ts.tv_sec == 0;
+                        io_uring_sqe* sqe = io_uring_get_sqe(data.ring);
+                        IoUringAttached* attached = new IoUringAttached;
+                        io_uring_sqe_set_data(sqe, attached);
+                        if (zeroed) {
+                            attached->data.emplace<TimerUpdate>(TimerUpdate {true});
+                            io_uring_prep_timeout_remove(sqe, (__u64)data.timers[id].ptr, 0);
+                        } else {
+                            attached->data.emplace<TimerUpdate>(TimerUpdate {false});
+                            io_uring_prep_timeout_update(sqe, &ts, (__u64)data.timers[id].ptr, 0);
+                        }
+                    } else {
+                        io_uring_sqe* sqe = io_uring_get_sqe(data.ring);
+                        IoUringAttached* attached = new IoUringAttached;
+                        data.timers[id] = {
+                            .ptr = attached,
+                            .obj_id = data.source_object,
+                            .ts = make_unique<__kernel_timespec>(ts)
+                        };
+                        attached->data.emplace<Timer>(Timer {id});
+
+                        io_uring_prep_timeout(sqe, data.timers[id].ts.get(), 0, 0);
+                        io_uring_sqe_set_data(sqe, attached);
+                    }
                 }
             }
 
@@ -580,8 +613,8 @@ size_t Event::i(Args... args) {
     return 0;
 }
 
-template <typename Obj, typename... Args>
-uint64_t Event::c(size_t idx, CallResponse(Obj::*fun)(uint64_t, Args...), Args... args) {
+template <typename Obj, typename... Args, typename... FnArgs>
+uint64_t Event::c(size_t idx, CallResponse(Obj::*fun)(uint64_t, Args...), FnArgs... args) {
     auto f = [args..., fun] (shared_ptr<Event> obj, uint64_t id) mutable -> CallResponse {
         return (static_pointer_cast<Obj>(obj).get()->*fun)(id, std::forward<Args>(args)...);
     };
@@ -590,8 +623,8 @@ uint64_t Event::c(size_t idx, CallResponse(Obj::*fun)(uint64_t, Args...), Args..
     return uring_data_.thread_data->call(info.thread_id, info.object_id, f);
 }
 
-template <typename Obj, typename... Args>
-uint64_t Event::c(CallResponse(Obj::*fun)(uint64_t, Args...), Args... args) {
+template <typename Obj, typename... Args, typename... FnArgs>
+uint64_t Event::c(CallResponse(Obj::*fun)(uint64_t, Args...), FnArgs... args) {
     auto& evs_ty = uring_data_.sub_events.at(type_index(typeid(Obj)));
     auto it = find(evs_ty.begin(), evs_ty.end(), nullopt);
     if (it == evs_ty.end())
@@ -600,10 +633,10 @@ uint64_t Event::c(CallResponse(Obj::*fun)(uint64_t, Args...), Args... args) {
     return c(it - evs_ty.begin(), fun, args...);
 }
 
-template <typename... Args>
-void Event::c(int op, void(*liburing)(io_uring_sqe*, Args...), Args... args) {
+template <typename... Args, typename... FnArgs>
+void Event::c(int op, void(*liburing)(io_uring_sqe*, Args...), FnArgs... args) {
     auto f = [args..., liburing](io_uring_sqe* sqe) mutable {
-        liburing(sqe, std::forward<Args>(args)...);
+        liburing(sqe, args...);
     };
 
     uring_data_.thread_data->call_uring(op, f);

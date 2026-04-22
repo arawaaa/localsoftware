@@ -77,15 +77,15 @@ public:
      *
      * Definition in AsyncHandler: depends on ThreadData
      */
-    template <typename Obj, typename... Args>
-    uint64_t c(size_t idx, CallResponse(Obj::*fun)(uint64_t, Args...), Args... args);
+    template <typename Obj, typename... Args, typename... FnArgs>
+    uint64_t c(size_t idx, CallResponse(Obj::*fun)(uint64_t, Args...), FnArgs... args);
 
-    template <typename Obj, typename... Args>
-    uint64_t c(CallResponse(Obj::*fun)(uint64_t, Args...), Args... args);
+    template <typename Obj, typename... Args, typename... FnArgs>
+    uint64_t c(CallResponse(Obj::*fun)(uint64_t, Args...), FnArgs... args);
 
     // Overload for liburing calls
-    template <typename... Args>
-    void c(int op, void(*liburing)(io_uring_sqe*, Args...), Args... args);
+    template <typename... Args, typename... FnArgs>
+    void c(int op, void(*liburing)(io_uring_sqe*, Args...), FnArgs... args);
 
     // Todo return RAII handle for created event instead of forcing clients to keep track of index
     template <typename Obj, typename... Args>

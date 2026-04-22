@@ -42,7 +42,7 @@ public:
                     auto req = AsyncHandler::self().get_data<InetSocketReadWriteEventHTTP>(this, 0, child.task_id).value()->get();
                     handle_request(req);
                 } else {
-                    timer_ = AsyncHandler::self().set_timer(ts);
+                    timer_ = timer(ts);
                     handle_response();
                 }
                 return nullopt;
@@ -60,21 +60,12 @@ public:
 
 private:
     void handle_request(boost::beast::http::request_parser<boost::beast::http::string_body>::value_type& req) {
-        AsyncHandler::self().call_dependent_function<InetSocketReadWriteEventHTTP>(
-            this,
-            0,
-            &InetSocketReadWriteEventHTTP::write_http,
-            http_manager_.handle_request(req)
-        );
+        c(&InetSocketReadWriteEventHTTP::write_http, http_manager_.handle_request(req));
         op_read_ = false;
     }
 
     void handle_response() {
-        AsyncHandler::self().call_dependent_function<InetSocketReadWriteEventHTTP>(
-            this,
-            0,
-            &InetSocketReadWriteEventHTTP::read_http
-        );
+        c(&InetSocketReadWriteEventHTTP::read_http);
         op_read_ = true;
     }
 

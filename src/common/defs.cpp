@@ -129,9 +129,6 @@ struct EventData {
 
 struct Timer {
     uint64_t timer_id;
-    uint64_t obj_id;
-    uint64_t proc_id;
-    __kernel_timespec ts;
 };
 
 struct TimerUpdate {
@@ -197,4 +194,5 @@ struct GetDataInfo {
 struct TimerData {
     IoUringAttached* ptr;
     uint64_t obj_id;
+    unique_ptr<__kernel_timespec> ts;
 };
