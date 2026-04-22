@@ -13,17 +13,17 @@
 #include "common/http_manager.cpp"
 #include "reverse_proxy_manager.cpp"
 
-class ReverseProxyServer : public IoEvent {
+class ReverseProxyServer : public Event {
 public:
     ReverseProxyServer(vector<shared_ptr<File>> file, const HTTPManager& http_manager, ReverseProxyManager& proxy_manager)
-        : IoEvent(file), http_manager_(http_manager), proxy_manager_(proxy_manager)
+        : Event(file), http_manager_(http_manager), proxy_manager_(proxy_manager)
     {
         // TLS always for reverse proxies
-        IoUringManager::getInstance().initialize_dependent_event<InetSocketReadWriteEventHTTP>(this, vector<shared_ptr<File>>{file[0]}, true);
+        AsyncHandler::self().initialize_dependent_event<InetSocketReadWriteEventHTTP>(this, vector<shared_ptr<File>>{file[0]}, true);
     }
 
     CallResponse start(uint64_t) {
-        IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventHTTP>(
+        AsyncHandler::self().call_dependent_function<InetSocketReadWriteEventHTTP>(
             this,
             0,
             &InetSocketReadWriteEventHTTP::read_http
@@ -35,14 +35,14 @@ public:
     void on_new_data(int, EventType event) override {
         auto res = get<ChildTaskCompletion>(event);
         if (res.return_code <= 0) {
-            IoUringManager::getInstance().finalize_current_task(true, -1);
+            AsyncHandler::self().finalize_current_task(true, -1);
             return;
         }
 
         switch (next_op_) {
             case WritePeerBranch:
             {
-                auto req = IoUringManager::getInstance().get_data<InetSocketReadWriteEventHTTP>(this, 0, res.task_id).value()->get();
+                auto req = AsyncHandler::self().get_data<InetSocketReadWriteEventHTTP>(this, 0, res.task_id).value()->get();
 
                 auto resp = http_manager_.handle_request_with_pred(req, [this](const http::request<http::string_body>& req, bool& skip) -> optional<http::response<http::string_body>> {
                     if (auto it = req.find(http::field::cookie); it != req.end()) {
@@ -60,7 +60,7 @@ public:
                 });
 
                 if (resp) {
-                    IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventHTTP>(
+                    AsyncHandler::self().call_dependent_function<InetSocketReadWriteEventHTTP>(
                         this,
                         0,
                         &InetSocketReadWriteEventHTTP::write_http,
@@ -70,7 +70,7 @@ public:
                 } else {
                     if (check_websocket(req))
                         check_websocket_ = true;
-                    IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventHTTPC>(
+                    AsyncHandler::self().call_dependent_function<InetSocketReadWriteEventHTTPC>(
                         this,
                         0,
                         &InetSocketReadWriteEventHTTPC::write_http,
@@ -82,7 +82,7 @@ public:
             }
             case ReadInternalPeer:
             {
-                IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventHTTPC>(
+                AsyncHandler::self().call_dependent_function<InetSocketReadWriteEventHTTPC>(
                     this,
                     0,
                     &InetSocketReadWriteEventHTTPC::read_http
@@ -92,9 +92,9 @@ public:
             }
             case WriteExternalPeer:
             {
-                auto resp = IoUringManager::getInstance().get_data<InetSocketReadWriteEventHTTPC>(this, 0, res.task_id).value()->get();
+                auto resp = AsyncHandler::self().get_data<InetSocketReadWriteEventHTTPC>(this, 0, res.task_id).value()->get();
 
-                IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventHTTP>(
+                AsyncHandler::self().call_dependent_function<InetSocketReadWriteEventHTTP>(
                     this,
                     0,
                     &InetSocketReadWriteEventHTTP::write_http,
@@ -107,7 +107,7 @@ public:
             }
             case ReadExternalPeer:
             {
-                IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventHTTP>(
+                AsyncHandler::self().call_dependent_function<InetSocketReadWriteEventHTTP>(
                     this,
                     0,
                     &InetSocketReadWriteEventHTTP::read_http
@@ -118,12 +118,12 @@ public:
             case Websocket:
             {
                 if (check_websocket_) {
-                    IoUringManager::getInstance().move_subevents_up<InetSocketReadWriteEventHTTP, InetSocketTLSEvent>(
+                    AsyncHandler::self().move_subevents_up<InetSocketReadWriteEventHTTP, InetSocketTLSEvent>(
                         this, 0);
-                    IoUringManager::getInstance().move_subevents_up<InetSocketReadWriteEventHTTPC, InetSocketReadWriteEventBytes>(
+                    AsyncHandler::self().move_subevents_up<InetSocketReadWriteEventHTTPC, InetSocketReadWriteEventBytes>(
                         this, 0);
 
-                    auto [eid, _] = IoUringManager::getInstance().call_dependent_function<InetSocketTLSEvent>(
+                    auto [eid, _] = AsyncHandler::self().call_dependent_function<InetSocketTLSEvent>(
                         this,
                         0,
                         &InetSocketTLSEvent::read,
@@ -131,7 +131,7 @@ public:
                         sizeof(e_buf_),
                         false
                     );
-                    auto [iid, _] = IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventBytes>(
+                    auto [iid, _] = AsyncHandler::self().call_dependent_function<InetSocketReadWriteEventBytes>(
                         this,
                         0,
                         &InetSocketReadWriteEventBytes::read,
@@ -147,7 +147,7 @@ public:
 
                 if (res.task_id == e_to_i_) {
                     if (e_read_) {
-                        auto [eid, _] = IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventBytes>(
+                        auto [eid, _] = AsyncHandler::self().call_dependent_function<InetSocketReadWriteEventBytes>(
                             this,
                             0,
                             &InetSocketReadWriteEventBytes::write,
@@ -157,7 +157,7 @@ public:
                         e_to_i_ = eid;
                         e_read_ = false;
                     } else {
-                        auto [eid, _] = IoUringManager::getInstance().call_dependent_function<InetSocketTLSEvent>(
+                        auto [eid, _] = AsyncHandler::self().call_dependent_function<InetSocketTLSEvent>(
                             this,
                             0,
                             &InetSocketTLSEvent::read,
@@ -170,7 +170,7 @@ public:
                     }
                 } else if (res.task_id == i_to_e_) {
                     if (i_read_) {
-                        auto [iid, _] = IoUringManager::getInstance().call_dependent_function<InetSocketTLSEvent>(
+                        auto [iid, _] = AsyncHandler::self().call_dependent_function<InetSocketTLSEvent>(
                             this,
                             0,
                             &InetSocketTLSEvent::write,
@@ -180,7 +180,7 @@ public:
                         i_to_e_ = iid;
                         i_read_ = false;
                     } else {
-                        auto [iid, _] = IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventBytes>(
+                        auto [iid, _] = AsyncHandler::self().call_dependent_function<InetSocketReadWriteEventBytes>(
                             this,
                             0,
                             &InetSocketReadWriteEventBytes::read,
@@ -195,6 +195,10 @@ public:
 
             }
         }
+    }
+
+    void procedure_update(PUType, CallResponse) override {
+
     }
 
     string get_info() const override { return "ReverseProxyServer FD " + to_string(files_[0]->get()); }
@@ -252,7 +256,7 @@ private:
             }
 
             freeaddrinfo(result);
-            IoUringManager::getInstance().initialize_dependent_event<InetSocketReadWriteEventHTTPC>(this, vector<shared_ptr<File>>{make_shared<File>(s)}, false);
+            AsyncHandler::self().initialize_dependent_event<InetSocketReadWriteEventHTTPC>(this, vector<shared_ptr<File>>{make_shared<File>(s)}, false);
             connected_intern_peer_ = true;
             return true;
         }

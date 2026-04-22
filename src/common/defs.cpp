@@ -1,17 +1,22 @@
 #pragma once
 
+#include <liburing.h>
 #include <string>
 #include <list>
 #include <cstdint>
 #include <typeindex>
 #include <variant>
 #include <utility>
+#include <set>
+#include <map>
+#include <unordered_set>
+#include <unordered_map>
 
 #include <oneapi/tbb.h>
 
 using namespace std;
 
-class IoEvent;
+class Event;
 
 enum RequestID {
     ID_DEFAULT = 0x1,
@@ -20,7 +25,7 @@ enum RequestID {
     FLAG_REDO_CACHED_DATA = 0x10
 };
 
-enum class CallStatus { Failed, Running, Finished, Stopped };
+enum class CallStatus { Degraded, Failed, Running, Finished, Stopped };
 
 // Types passed to on_new_data for various event types
 
@@ -32,6 +37,7 @@ struct CallStarted {
 
 struct IoUringResult {
     uint64_t calling_id;
+    int op;
     int res;
 };
 
@@ -57,48 +63,55 @@ using EventType = variant<CallStarted, Timeout, IoUringResult, Wakeup, ChildTask
 struct CallResponse {
     string description;
     bool success;
+    optional<pair<bool, int>> ret;
     uint32_t op_hint;
 };
 
 struct CallerInfo {
     int thread_id;
-    size_t obj_idx;
     uint64_t obj_id;
+    uint64_t proc_id;
+};
+
+struct TargetInfo {
+    uint64_t obj_id;
+    uint64_t proc_id;
 };
 
 struct ConstructorCall {
-    function<shared_ptr<IoEvent>()> constructor;
+    typedef function<shared_ptr<Event>()> Type;
+    Type constructor;
     CallerInfo ci;
-    type_index type;
-    uint64_t object_id;
+    TargetInfo ti;
 };
 
 struct FunctionCall {
-    function<CallResponse(shared_ptr<IoEvent>)> call;
+    typedef function<CallResponse(shared_ptr<Event>, uint64_t id)> Type;
+    Type call;
     CallerInfo ci;
-    type_index type;
-    uint64_t object_id;
-    uint64_t procedure_id;
+    TargetInfo ti;
+};
+
+enum class PUType : int {
+    StartConfirm,
+    Yield
 };
 
 struct ProcedureUpdate {
-    enum Type {
-        StartConfirm,
-        Yield
-    };
-    Type type;
-    uint64_t object_id;
+    PUType type;
     CallResponse resp;
+    CallerInfo ci;
+    TargetInfo ti;
 };
 
 struct Delete {
-    type_index type;
-    uint64_t object_id;
+    CallerInfo ci;
+    TargetInfo ti;
 };
 
 struct Data {
-    type_index type;
-    uint64_t object_id;
+    CallerInfo ci;
+    TargetInfo ti;
     EventType data;
 };
 
@@ -110,13 +123,15 @@ struct QueueContainer {
 
 struct EventData {
     int op;
-    uint64_t running_id;
-    IoEvent* event;
+    uint64_t obj_id;
+    uint64_t proc_id;
 };
 
 struct Timer {
     uint64_t timer_id;
-    uint64_t running_id;
+    uint64_t obj_id;
+    uint64_t proc_id;
+    __kernel_timespec ts;
 };
 
 struct TimerUpdate {
@@ -139,13 +154,28 @@ enum OpHint {
     OP_HINT_WAIT = 1 << 7
 };
 
+struct ChildObjectInfo {
+    int thread;
+    unordered_set<uint64_t> procedures;
+};
+
+struct ObjectDataThreaded {
+    shared_ptr<Event> ptr;
+    // assoc_procs are associated procedures only for the current thread
+    list<uint64_t> assoc_procs;
+    // No hashing function available for pair
+    set<pair<int, uint64_t>> parents;
+    unordered_map<uint64_t, ChildObjectInfo> children;
+};
+
+// Thread-specific
 struct CallDataThreaded {
     uint64_t assoc_obj;
     CallStatus status;
     string description;
     uint32_t op_hint;
-    list<uint64_t> parents;
-    list<uint64_t> children;
+    // thread, object, procedure
+    tuple<int, uint64_t, uint64_t> back_notify;
     int return_code;
 };
 
@@ -156,10 +186,15 @@ struct CallData {
     uint32_t op_hint;
     list<uint64_t> parent_task_id;
     int return_code;
-    IoEvent* event;
+    Event* event;
     uint64_t thread_id;
 };
 
 struct GetDataInfo {
     bool valid;
+};
+
+struct TimerData {
+    IoUringAttached* ptr;
+    uint64_t obj_id;
 };

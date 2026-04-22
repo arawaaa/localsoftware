@@ -11,11 +11,11 @@
 
 using namespace std;
 
-class BandwidthMonitorAcceptEvent : public IoEvent {
+class BandwidthMonitorAcceptEvent : public Event {
 public:
     // Takes ownership of the listening server socket file descriptor
     BandwidthMonitorAcceptEvent(vector<shared_ptr<File>> server_file, bool enable_tls, const string& base_dir)
-        : IoEvent(server_file), http_manager_(base_dir), enable_tls_(enable_tls) {
+        : Event(server_file), http_manager_(base_dir), enable_tls_(enable_tls) {
         client_addr_len_ = sizeof(client_addr_);
     }
 
@@ -29,7 +29,7 @@ public:
         if (holds_alternative<ChildTaskCompletion>(event)) {
             std::cout << "Connection close" << std::endl;
             auto res = get<ChildTaskCompletion>(event);
-            IoUringManager::getInstance().free_child_event_for_taskid<BandwidthMonitoringServer>(this, res.task_id);
+            AsyncHandler::self().free_child_event_for_taskid<BandwidthMonitoringServer>(this, res.task_id);
         } else {
             int res = get<IoUringResult>(event).res;
             if (res >= 0) {
@@ -40,8 +40,8 @@ public:
                     inet_ntop(AF_INET6, &(client_addr6_.sin6_addr), ip_str, INET6_ADDRSTRLEN);
                 cout << "[MONITOR" << (enable_tls_ ? " TLS" : "") << (op ? " IPv6" : " IPv4") << "] Accept with [" << ip_str << "]:" << (op ? client_addr6_.sin6_port : client_addr_.sin_port) << endl;
                 auto client_file = vector<shared_ptr<File>>{make_shared<File>(res)};
-                int idx = IoUringManager::getInstance().initialize_dependent_event<BandwidthMonitoringServer>(this, client_file, enable_tls_, http_manager_);
-                IoUringManager::getInstance().call_dependent_function<BandwidthMonitoringServer>(
+                int idx = AsyncHandler::self().initialize_dependent_event<BandwidthMonitoringServer>(this, client_file, enable_tls_, http_manager_);
+                AsyncHandler::self().call_dependent_function<BandwidthMonitoringServer>(
                     this,
                     idx,
                     &BandwidthMonitoringServer::start
@@ -59,7 +59,7 @@ public:
 private:
     void queue_accept(int op) {
         if (op == 0) {
-            IoUringManager::getInstance().cache_call(
+            AsyncHandler::self().cache_call(
                 this,
                 0,
                 io_uring_prep_accept,
@@ -69,7 +69,7 @@ private:
                 0
             );
         } else if (op == 1) {
-            IoUringManager::getInstance().cache_call(
+            AsyncHandler::self().cache_call(
                 this,
                 1,
                 io_uring_prep_accept,

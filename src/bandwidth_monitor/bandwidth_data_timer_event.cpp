@@ -8,7 +8,7 @@
 
 #include <liburing.h>
 
-class BandwidthDataTimerEvent : public IoEvent {
+class BandwidthDataTimerEvent : public Event {
 public:
     BandwidthDataTimerEvent()
     {
@@ -21,13 +21,13 @@ public:
         ts_.it_value.tv_sec = 1;
         ts_.it_value.tv_nsec = 0;
         timerfd_settime(files_[0]->get(), 0, &ts_, nullptr);
-        IoUringManager::getInstance().cache_call(this, ID_DEFAULT, io_uring_prep_read, files_[0]->get(), &expirations_, sizeof(expirations_), 0);
+        AsyncHandler::self().cache_call(this, ID_DEFAULT, io_uring_prep_read, files_[0]->get(), &expirations_, sizeof(expirations_), 0);
 
         return {"BandwidthDataTimer timeout", true, 0};
     }
 
     void on_new_data(int, EventType) override {
-        IoUringManager::getInstance().finalize_current_task(false, 1);
+        AsyncHandler::self().finalize_current_task(false, 1);
     };
 
     std::string get_info() const override { return "BandwidthDataTimerEvent"; }

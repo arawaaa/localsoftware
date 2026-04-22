@@ -18,16 +18,16 @@ using namespace std;
 /**
  * @brief Base implementation for HTTP socket reading using Boost.Beast parsers.
  */
-class InetSocketTLSEvent : public IoEvent {
+class InetSocketTLSEvent : public Event {
 public:
     InetSocketTLSEvent(vector<shared_ptr<File>> file, bool server)
-        : IoEvent(file), server_(server)
+        : Event(file), server_(server)
     {
-        if ((ssl_ = SSL_new(IoUringManager::getInstance().get_tls_ctx())) == NULL) {
+        if ((ssl_ = SSL_new(AsyncHandler::self().get_tls_ctx())) == NULL) {
             throw runtime_error{"Failed to create ssl object"};
         }
 
-        IoUringManager::getInstance().initialize_dependent_event<InetSocketReadWriteEventBytes>(this, file);
+        i<InetSocketReadWriteEventBytes>(file);
 
         readbuf_ = BIO_new(BIO_s_mem());
         writebuf_ = BIO_new(BIO_s_mem());
@@ -48,7 +48,7 @@ public:
         u_readlen_ = len;
         u_read_p_ = 0;
         handle_read();
-        return {"Read len bytes into buf TLS", true, OpHint::OP_HINT_READ | OpHint::OP_HINT_NETWORK};
+        return {"Read len bytes into buf TLS", true, nullopt, OpHint::OP_HINT_READ | OpHint::OP_HINT_NETWORK};
     }
 
     CallResponse write(uint64_t id, char* buf, size_t len) {
@@ -57,17 +57,16 @@ public:
         u_writelen_ = len;
         u_write_p_ = 0;
         handle_write();
-        return {"Write len bytes from buf TLS", true, OpHint::OP_HINT_WRITE | OpHint::OP_HINT_NETWORK};
+        return {"Write len bytes from buf TLS", true, nullopt, OpHint::OP_HINT_WRITE | OpHint::OP_HINT_NETWORK};
     }
 
     /**
      * @brief Handle the completion queue entry (CQE) result.
      */
-    void on_new_data(int, EventType event) override {
+    optional<pair<bool, int>> on_yield(EventType event) override {
         auto res = get<ChildTaskCompletion>(event);
         if (res.return_code <= 0) {
-            IoUringManager::getInstance().finalize_current_task(true, res.return_code);
-            return;
+            return pair{true, res.return_code};
         }
 
         if (res.task_id == task_bytes_read_ && !task_bytes_r_fin_) {
@@ -114,7 +113,7 @@ protected:
     char e_read_[MAXFRAMELENGTH], e_write_[MAXFRAMELENGTH];
     TLSState state_;
 
-    void handle_handshake() {
+    optional<pair<bool, int>> handle_handshake() {
         int ec = server_ ? SSL_accept(ssl_) : SSL_connect(ssl_);
         if (SSL_get_error(ssl_, ec) == SSL_ERROR_WANT_READ) {
             if (BIO_ctrl_pending(writebuf_)) {
@@ -124,17 +123,20 @@ protected:
             }
         } else if (SSL_get_error(ssl_, ec) != SSL_ERROR_NONE) {
             ERR_print_errors_fp(stderr);
-            IoUringManager::getInstance().finalize_current_task(true, -1);
             state_ = TLSState::Failed;
+            return pair{true, -1};
         } else {
             state_ = TLSState::Full;
         }
+        return nullopt;
     }
 
-    void handle_read() {
+    optional<pair<bool, int>> handle_read() {
         if (state_ == TLSState::WaitHello) {
-            handle_handshake();
+            auto res = handle_handshake();
+            if (res) return res;
         }
+
         if (state_ == TLSState::Full) { do {
             size_t readbytes = 0;
             int ret = SSL_read_ex(ssl_, u_read_ + u_read_p_, u_readlen_ - u_read_p_, &readbytes);
@@ -148,11 +150,11 @@ protected:
                     } else {
                         arm_read();
                     }
-                    return;
+                    return nullopt;
                 case SSL_ERROR_NONE:
                     if (u_readlen_ - u_read_p_ == 0 || (!sticky_read_ && u_read_p_)) {
                         // Done, or received initial message only
-                        IoUringManager::getInstance().finalize_current_task(false, u_read_p_);
+                        return pair{false, u_read_p_};
                     } else if (!BIO_ctrl_pending(readbuf_)) {
                         // Nothing else in the BIO, still incomplete. Continue
                         arm_read();
@@ -161,16 +163,19 @@ protected:
                 default:
                     // What to do in this case? I think ssl_write will also error out
                     ERR_print_errors_fp(stderr);
-                    IoUringManager::getInstance().finalize_current_task(true, -1);
-                    return;
+                    return pair{true, -1};
             }
         } while (BIO_ctrl_pending(readbuf_) && (u_readlen_ - u_read_p_) && (sticky_read_ || !u_read_p_));}
+
+        return nullopt;
     }
 
-    void handle_write() {
+    optional<pair<bool, int>> handle_write() {
         if (state_ == TLSState::WaitHello) {
-            handle_handshake();
+            auto res = handle_handshake();
+            if (res) return res;
         }
+
         if (state_ == TLSState::Full) {
             size_t numread = 0;
             int ret = SSL_write_ex(ssl_, u_write_ + u_write_p_, min(u_writelen_ - u_write_p_, MAXUFRAMELENGTH), &numread);
@@ -188,49 +193,35 @@ protected:
                     if (BIO_ctrl_pending(writebuf_) || (u_writelen_ - u_write_p_)) {
                         arm_write();
                     } else {
-                        IoUringManager::getInstance().finalize_current_task(false, u_writelen_);
+                        return pair{false, u_writelen_};
                     }
                     break;
                 default:
                     ERR_print_errors_fp(stderr);
-                    IoUringManager::getInstance().finalize_current_task(true, -1);
-                    break;
+                    return pair{true, -1};
             }
         }
     }
 
     void arm_read() {
         if (task_bytes_r_fin_) {
-            auto [taskid, success] = IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventBytes>(
-                this,
-                0,
-                &InetSocketReadWriteEventBytes::read,
-                e_read_,
-                sizeof(e_read_),
-                false // Must always be non-sticky since we don't know how much encrypted bytes to read for n unenc bytes
-            );
+            uint64_t taskid = c(&InetSocketReadWriteEventBytes::read, e_read_, sizeof(e_read_), false);
             task_bytes_read_ = taskid;
             task_bytes_r_fin_ = false;
         } else {
-            // Invariant: always called by the writer task and so can attach to pending read
-            IoUringManager::getInstance().attach_child(task_bytes_read_);
+            // Async attach has to be a bit different...
+            AsyncHandler::self().attach_child(task_bytes_read_);
         }
     }
 
     void arm_write() {
         if (task_bytes_w_fin_) {
             BIO_read_ex(writebuf_, e_write_, sizeof(e_write_), &e_writelen_);
-            auto [taskid, success] = IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventBytes>(
-                this,
-                0,
-                &InetSocketReadWriteEventBytes::write,
-                e_write_,
-                e_writelen_
-            );
+            uint64_t taskid = c(&InetSocketReadWriteEventBytes::write, e_write_, e_writelen_);
             task_bytes_write_ = taskid;
             task_bytes_w_fin_ = false;
         } else {
-            IoUringManager::getInstance().attach_child(task_bytes_write_);
+            AsyncHandler::self().attach_child(task_bytes_write_);
         }
     }
 };

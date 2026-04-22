@@ -1,6 +1,7 @@
 #pragma once
 
 #include <boost/beast/http/string_body.hpp>
+#include <optional>
 #include <variant>
 #include <vector>
 #include <string>
@@ -35,42 +36,42 @@ struct __attribute__((packed)) LogRecord {
     uint32_t hour;
 };
 
-class BandwidthMonitoringServer : public IoEvent {
+class BandwidthMonitoringServer : public Event {
     template<class... Ts>
     struct overloaded : Ts... { using Ts::operator()...; };
 public:
     BandwidthMonitoringServer(vector<shared_ptr<File>> client_file, bool enable_tls, const HTTPManager& http_manager)
-        : IoEvent(client_file), tls_enabled_(enable_tls), http_manager_(http_manager)
+        : Event(client_file), tls_enabled_(enable_tls), http_manager_(http_manager)
     {
-        IoUringManager::getInstance().initialize_dependent_event<InetSocketReadWriteEventHTTP>(this, client_file, enable_tls);
+        AsyncHandler::self().initialize_dependent_event<InetSocketReadWriteEventHTTP>(this, client_file, enable_tls);
     }
 
     CallResponse start(uint64_t) {
-        IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventHTTP>(
+        AsyncHandler::self().call_dependent_function<InetSocketReadWriteEventHTTP>(
             this,
             0,
             &InetSocketReadWriteEventHTTP::read_http
         );
-        timer_ = IoUringManager::getInstance().set_timer(ts);
+        timer_ = AsyncHandler::self().set_timer(ts);
         current_op_ = Read;
         return {"Starting up bandwidth monitor.", true, OP_HINT_NETWORK};
     }
 
-    void on_new_data(int, EventType event) override {
-        visit(overloaded {
+    optional<pair<bool, int>> on_yield(EventType event) override {
+        return visit(overloaded {
             [this](ChildTaskCompletion& child) {
                 if (child.return_code <= 0) {
-                    IoUringManager::getInstance().finalize_current_task(true, child.return_code);
+                    AsyncHandler::self().finalize_current_task(true, child.return_code);
                 }
 
                 switch (current_op_) {
                     case Read:
-                        IoUringManager::getInstance().cancel_timer(timer_);
+                        AsyncHandler::self().cancel_timer(timer_);
                         stage_http_read(child);
                         break;
                     case Write:
-                        timer_ = IoUringManager::getInstance().set_timer(ts);
-                        IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventHTTP>(
+                        timer_ = AsyncHandler::self().set_timer(ts);
+                        AsyncHandler::self().call_dependent_function<InetSocketReadWriteEventHTTP>(
                             this,
                             0,
                             &InetSocketReadWriteEventHTTP::read_http
@@ -79,7 +80,7 @@ public:
                         break;
                     case WebsocketInit:
                         // Allow streaming for 20 minutes
-                        timer_ = IoUringManager::getInstance().set_timer(__kernel_timespec {.tv_sec = 1200, .tv_nsec = 0});
+                        timer_ = AsyncHandler::self().set_timer(__kernel_timespec {.tv_sec = 1200, .tv_nsec = 0});
                         stage_websocket_init();
                     case WebsocketLogs:
                         stage_websocket_logs();
@@ -88,11 +89,15 @@ public:
                         stage_websocket_live(child);
                         break;
                 }
+                return nullopt;
             },
-            [](Timeout&) {
-                IoUringManager::getInstance().finalize_current_task(true, -1);
+            [](Timeout&) -> optional<pair<bool, int>> {
+                AsyncHandler::self().finalize_current_task(true, -1);
+                return pair{true, -1};
             },
-            [](auto&) {}
+            [](auto&) {
+                return nullopt;
+            }
         }, event);
     }
 
@@ -100,12 +105,12 @@ public:
 
 private:
     void stage_http_read(ChildTaskCompletion& result) {
-        auto req = IoUringManager::getInstance().get_data<InetSocketReadWriteEventHTTP>(this, 0, result.task_id).value()->get();
+        auto req = AsyncHandler::self().get_data<InetSocketReadWriteEventHTTP>(this, 0, result.task_id).value()->get();
 
         if (req.method() == http::verb::get) {
             if (req.find("Connection") != req.end() && req.find("Upgrade") != req.end()) {
                 if (req.at("Connection") != "Upgrade" || req.at("Upgrade") != "websocket") {
-                    IoUringManager::getInstance().finalize_current_task(true, -1);
+                    AsyncHandler::self().finalize_current_task(true, -1);
                     return;
                 }
                 current_op_ = WebsocketInit;
@@ -122,7 +127,7 @@ private:
                 res.set(http::field::sec_websocket_accept, accept_key);
                 res.prepare_payload();
 
-                IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventHTTP>(
+                AsyncHandler::self().call_dependent_function<InetSocketReadWriteEventHTTP>(
                     this,
                     0,
                     &InetSocketReadWriteEventHTTP::write_http,
@@ -130,7 +135,7 @@ private:
                 );
                 return;
             }
-            IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventHTTP>(
+            AsyncHandler::self().call_dependent_function<InetSocketReadWriteEventHTTP>(
                 this,
                 0,
                 &InetSocketReadWriteEventHTTP::write_http,
@@ -138,18 +143,18 @@ private:
             );
             current_op_ = Write;
         } else {
-            IoUringManager::getInstance().finalize_current_task(true, -1);
+            AsyncHandler::self().finalize_current_task(true, -1);
         }
     }
 
     void stage_websocket_init() {
         // Have our HTTP adaptor class grant us control of the underlying socket class and then quit itself
 
-        IoUringManager::getInstance().initialize_dependent_event<BandwidthDataTimerEvent>(this); IoUringManager::getInstance().initialize_dependent_event<WebsocketEvent>(this, tls_enabled_);
+        AsyncHandler::self().initialize_dependent_event<BandwidthDataTimerEvent>(this); AsyncHandler::self().initialize_dependent_event<WebsocketEvent>(this, tls_enabled_);
         if (tls_enabled_) {
-            IoUringManager::getInstance().move_subevents<InetSocketReadWriteEventHTTP, WebsocketEvent, InetSocketTLSEvent>(this, 0, 0);
+            AsyncHandler::self().move_subevents<InetSocketReadWriteEventHTTP, WebsocketEvent, InetSocketTLSEvent>(this, 0, 0);
         } else {
-            IoUringManager::getInstance().move_subevents<InetSocketReadWriteEventHTTP, WebsocketEvent, InetSocketReadWriteEventBytes>(this, 0, 0);
+            AsyncHandler::self().move_subevents<InetSocketReadWriteEventHTTP, WebsocketEvent, InetSocketReadWriteEventBytes>(this, 0, 0);
         }
         log_.open(LOG_FILE);
         current_op_ = WebsocketLogs;
@@ -171,7 +176,7 @@ private:
 
         if (chunk_data.empty()) {
             uint64_t marker[3] = {0xFFFFFFFFFFFFFFFFULL, 0xFFFFFFFFFFFFFFFFULL, 0xFFFFFFFFFFFFFFFFULL};
-            IoUringManager::getInstance().call_dependent_function<WebsocketEvent>(
+            AsyncHandler::self().call_dependent_function<WebsocketEvent>(
                 this,
                 0,
                 &WebsocketEvent::write_frame,
@@ -180,7 +185,7 @@ private:
             );
             current_op_ = WebsocketLive;
         } else {
-            IoUringManager::getInstance().call_dependent_function<WebsocketEvent>(
+            AsyncHandler::self().call_dependent_function<WebsocketEvent>(
                 this,
                 0,
                 &WebsocketEvent::write_frame,
@@ -212,14 +217,14 @@ private:
                 (uint32_t)t->tm_hour
             };
 
-            auto [tid, _] = IoUringManager::getInstance().call_dependent_function<BandwidthDataTimerEvent>(
+            auto [tid, _] = AsyncHandler::self().call_dependent_function<BandwidthDataTimerEvent>(
                 this,
                 0,
                 &BandwidthDataTimerEvent::prepare_timer
             );
 
 
-            auto [wid, _] = IoUringManager::getInstance().call_dependent_function<WebsocketEvent>(
+            auto [wid, _] = AsyncHandler::self().call_dependent_function<WebsocketEvent>(
                 this,
                 0,
                 &WebsocketEvent::write_frame,

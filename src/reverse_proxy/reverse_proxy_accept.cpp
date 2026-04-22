@@ -15,11 +15,11 @@
 using namespace std;
 constexpr string password = "arnavopenclaw";
 
-class ReverseProxyAccept : public IoEvent {
+class ReverseProxyAccept : public Event {
 public:
     // Takes ownership of the listening server socket file descriptor
     ReverseProxyAccept(vector<shared_ptr<File>> server_file, const string& base_dir)
-        : IoEvent(server_file), http_manager_(base_dir) \
+        : Event(server_file), http_manager_(base_dir) \
     {
         auto keep_alive_headers = vector<pair<http::field, string>>{
             {http::field::content_type, "text/plain"},
@@ -72,7 +72,7 @@ public:
         if (holds_alternative<ChildTaskCompletion>(event)) {
             std::cout << "Connection close" << std::endl;
             auto res = get<ChildTaskCompletion>(event);
-            IoUringManager::getInstance().free_child_event_for_taskid<ReverseProxyServer>(this, res.task_id);
+            AsyncHandler::self().free_child_event_for_taskid<ReverseProxyServer>(this, res.task_id);
         } else {
             int res = get<IoUringResult>(event).res;
             if (res >= 0) {
@@ -80,8 +80,8 @@ public:
                 inet_ntop(AF_INET, &(client_addr_.sin_addr), ip_str, INET_ADDRSTRLEN);
                 cout << "[Reverse Proxy TLS] Accept with [" << ip_str << "]:" << client_addr_.sin_port << endl;
                 auto client_file = vector<shared_ptr<File>>{make_shared<File>(res)};
-                int idx = IoUringManager::getInstance().initialize_dependent_event<ReverseProxyServer>(this, client_file, http_manager_, proxy_manager_);
-                IoUringManager::getInstance().call_dependent_function<ReverseProxyServer>(
+                int idx = AsyncHandler::self().initialize_dependent_event<ReverseProxyServer>(this, client_file, http_manager_, proxy_manager_);
+                AsyncHandler::self().call_dependent_function<ReverseProxyServer>(
                     this,
                     idx,
                     &ReverseProxyServer::start
@@ -92,13 +92,17 @@ public:
         }
     }
 
+    void procedure_update(PUType, CallResponse) override {
+
+    }
+
     std::string get_info() const override {
         return "OpenClaw on FD " + std::to_string(files_[0]->get());
     }
 
 private:
     void queue_accept() {
-        IoUringManager::getInstance().cache_call(this, ID_DEFAULT, io_uring_prep_accept, files_[0]->get(),
+        AsyncHandler::self().cache_call(this, ID_DEFAULT, io_uring_prep_accept, files_[0]->get(),
                          reinterpret_cast<struct sockaddr*>(&client_addr_),
                          &client_addr_len_, 0);
     }

@@ -194,7 +194,7 @@ void server_func() {
         return;
     }
 
-    auto& instance = IoUringManager::getInstance(1);
+    auto& instance = AsyncHandler::self(1);
     // Setup WebSocket Accept Event
     auto ws_files = {ws_fd, ws6_fd};
     auto res = instance.initialize_root_event<BandwidthMonitorAcceptEvent>(ws_files, true, "/srv/bwith");
@@ -202,13 +202,13 @@ void server_func() {
 
     // Setup HTTP Landing Accept Event
     vector<shared_ptr<File>> http_files = {http_fd, http6_fd};
-    res = instance.initialize_root_event<AioLandingAcceptEvent>(http_files, false, "/srv/landing");
-    instance.call_root_function<AioLandingAcceptEvent>(res, &AioLandingAcceptEvent::prepare_accept);
+    res = instance.initialize_root_event<LandingAccept>(http_files, false, "/srv/landing");
+    instance.call_root_function<LandingAccept>(res, &LandingAccept::prepare_accept);
 
     // Setup HTTPS Landing Accept Event
     vector<shared_ptr<File>> https_files = {https_fd, https6_fd};
-    res = instance.initialize_root_event<AioLandingAcceptEvent>(https_files, true, "/srv/landing");
-    instance.call_root_function<AioLandingAcceptEvent>(res, &AioLandingAcceptEvent::prepare_accept);
+    res = instance.initialize_root_event<LandingAccept>(https_files, true, "/srv/landing");
+    instance.call_root_function<LandingAccept>(res, &LandingAccept::prepare_accept);
 
     vector<shared_ptr<File>> rp_files = {rphttps_fd};
     res = instance.initialize_root_event<ReverseProxyAccept>(rp_files, "/srv/rp");

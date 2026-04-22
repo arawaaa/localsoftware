@@ -6,6 +6,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <variant>
+#include <optional>
 
 #include "aio_landing_server.cpp"
 #include "common/defs.cpp"
@@ -14,10 +15,10 @@
 
 using namespace std;
 
-class AioLandingAcceptEvent : public IoEvent {
+class LandingAccept : public Event {
 public:
-    AioLandingAcceptEvent(vector<shared_ptr<File>> server_file, bool use_tls, const string& base_dir)
-        : IoEvent(server_file), use_tls_(use_tls), http_manager_(base_dir, use_tls ? "https" : "http")
+    LandingAccept(vector<shared_ptr<File>> server_file, bool use_tls, const string& base_dir)
+        : Event(server_file), use_tls_(use_tls), http_manager_(base_dir, use_tls ? "https" : "http")
     {
         client_addr_len_ = sizeof(client_addr_);
 
@@ -56,61 +57,49 @@ public:
         taskid_ = taskid;
         queue_accept(0);
         queue_accept(1);
-        return {"HTTP accepter", true, OP_HINT_NETWORK};
+        return {"HTTP accepter", true, nullopt, OP_HINT_NETWORK};
     }
 
-    void on_new_data(int op, EventType event) override {
+    optional<pair<bool, int>> on_yield(EventType event) override {
         if (holds_alternative<ChildTaskCompletion>(event)) {
             std::cout << "Connection close" << std::endl;
             auto res = get<ChildTaskCompletion>(event);
-            IoUringManager::getInstance().free_child_event_for_taskid<AioLandingHTTP>(this, res.task_id);
+            d<AioLandingHTTP>(indices[res.task_id]);
+            indices.erase(res.task_id);
         } else {
-            int res = get<IoUringResult>(event).res;
-            if (res >= 0) {
+            auto uri_res = get<IoUringResult>(event);
+
+            if (uri_res.res >= 0) {
                 char ip_str[INET6_ADDRSTRLEN];
-                if (!op)
+                if (!uri_res.op)
                     inet_ntop(AF_INET, &(client_addr_.sin_addr), ip_str, INET_ADDRSTRLEN);
                 else
                     inet_ntop(AF_INET6, &(client_addr6_.sin6_addr), ip_str, INET6_ADDRSTRLEN);
-                cout << "[LANDING" << (use_tls_ ? " TLS" : "") << (op ? " IPv6" : " IPv4") << "] Accept with [" << ip_str << "]:" << (op ? client_addr6_.sin6_port : client_addr_.sin_port) << endl;
-                auto client_file = vector<shared_ptr<File>>{make_shared<File>(res)};
-                int idx = IoUringManager::getInstance().initialize_dependent_event<AioLandingHTTP>(this, std::move(client_file), use_tls_, http_manager_);
-                IoUringManager::getInstance().call_dependent_function<AioLandingHTTP>(
-                    this,
-                    idx,
-                    &AioLandingHTTP::start
-                );
+
+                cout << "[LANDING" << (use_tls_ ? " TLS" : "") << (uri_res.op ? " IPv6" : " IPv4")
+                    << "] Accept with [" << ip_str << "]:"
+                    << (uri_res.op ? client_addr6_.sin6_port : client_addr_.sin_port) << endl;
+
+                auto client_file = vector<shared_ptr<File>>{make_shared<File>(uri_res.res)};
+
+                int idx = i<AioLandingHTTP>(std::move(client_file), use_tls_, http_manager_);
+                uint64_t taskid = c(idx, &AioLandingHTTP::start);
+                indices[taskid] = idx;
             }
             // Re-arm immediately
-            queue_accept(op);
+            queue_accept(uri_res.op);
         }
     }
 
-    string get_info() const override { return "AioLandingAcceptEvent FD " + to_string(files_[0]->get()); }
+    string get_info() const override { return "LandingAccept FD " + to_string(files_[0]->get()); }
 
 private:
     void queue_accept(int op) {
-        if (op == 0) {
-            IoUringManager::getInstance().cache_call(
-                this,
-                0,
-                io_uring_prep_accept,
-                files_[0]->get(),
-                reinterpret_cast<struct sockaddr*>(&client_addr_),
-                &client_addr_len_,
-                0
-            );
-        } else if (op == 1) {
-            IoUringManager::getInstance().cache_call(
-                this,
-                1,
-                io_uring_prep_accept,
-                files_[1]->get(),
-                reinterpret_cast<struct sockaddr*>(&client_addr6_),
-                &client_addr6_len_,
-                0
-            );
-        }
+        c(op, &io_uring_prep_accept, files_[op]->get(),
+            op == 0 ? reinterpret_cast<struct sockaddr*>(&client_addr_)
+                : reinterpret_cast<struct sockaddr*>(&client_addr6_),
+            op == 0 ? &client_addr_len_
+                : &client_addr6_len_, 0);
     }
 
     uint64_t taskid_;
@@ -120,4 +109,5 @@ private:
     socklen_t client_addr6_len_;
     bool use_tls_;
     HTTPManager http_manager_;
+    unordered_map<uint64_t, int> indices;
 };

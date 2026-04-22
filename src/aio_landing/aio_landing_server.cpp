@@ -13,57 +13,54 @@
 
 using namespace std;
 
-class AioLandingHTTP : public IoEvent {
+class AioLandingHTTP : public Event {
     template<class... Ts>
     struct overloaded : Ts... { using Ts::operator()...; };
 public:
     AioLandingHTTP(vector<shared_ptr<File>> file, bool enable_tls, const HTTPManager& http_manager)
-        : IoEvent(file), http_manager_(http_manager)
+        : Event(file), http_manager_(http_manager)
     {
-        IoUringManager::getInstance().initialize_dependent_event<InetSocketReadWriteEventHTTP>(this, file, enable_tls);
+        i<InetSocketReadWriteEventHTTP>(file, enable_tls);
     }
 
     CallResponse start(uint64_t) {
-        IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventHTTP>(
-            this,
-            0,
-            &InetSocketReadWriteEventHTTP::read_http
-        );
+        c(&InetSocketReadWriteEventHTTP::read_http);
         op_read_ = true;
-        timer_ = IoUringManager::getInstance().set_timer(ts);
-        return {"Server start up HTTP", true, OP_HINT_NETWORK};
+        timer_ = timer(ts);
+        return {"Server start up HTTP", true, nullopt, OP_HINT_NETWORK};
     }
 
-    void on_new_data(int, EventType event) override {
-        visit(overloaded {
-            [this](ChildTaskCompletion& child) {
+    optional<pair<bool, int>> on_yield(EventType event) override {
+        return visit(overloaded {
+            [this](ChildTaskCompletion& child) -> optional<pair<bool, int>> {
                 if (child.return_code <= 0) {
-                    IoUringManager::getInstance().finalize_current_task(true, child.return_code);
+                    return pair{true, child.return_code};
                 }
 
                 if (op_read_) {
-                    IoUringManager::getInstance().cancel_timer(timer_);
-                    auto req = IoUringManager::getInstance().get_data<InetSocketReadWriteEventHTTP>(this, 0, child.task_id).value()->get();
+                    AsyncHandler::self().cancel_timer(timer_);
+                    auto req = AsyncHandler::self().get_data<InetSocketReadWriteEventHTTP>(this, 0, child.task_id).value()->get();
                     handle_request(req);
                 } else {
-                    timer_ = IoUringManager::getInstance().set_timer(ts);
+                    timer_ = AsyncHandler::self().set_timer(ts);
                     handle_response();
                 }
+                return nullopt;
             },
-            [](Timeout&) {
-                IoUringManager::getInstance().finalize_current_task(true, -1);
+            [](Timeout&) -> optional<pair<bool, int>> {
+                return pair{true, -1};
             },
-            [](auto&) {}
+            [](auto&) -> optional<pair<bool, int>> {
+                return nullopt;
+            }
         }, event);
-
-
     }
 
     string get_info() const override { return "AioLandingHTTP FD " + to_string(files_[0]->get()); }
 
 private:
     void handle_request(boost::beast::http::request_parser<boost::beast::http::string_body>::value_type& req) {
-        IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventHTTP>(
+        AsyncHandler::self().call_dependent_function<InetSocketReadWriteEventHTTP>(
             this,
             0,
             &InetSocketReadWriteEventHTTP::write_http,
@@ -73,7 +70,7 @@ private:
     }
 
     void handle_response() {
-        IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventHTTP>(
+        AsyncHandler::self().call_dependent_function<InetSocketReadWriteEventHTTP>(
             this,
             0,
             &InetSocketReadWriteEventHTTP::read_http

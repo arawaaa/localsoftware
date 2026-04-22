@@ -20,15 +20,15 @@ namespace http = boost::beast::http;
 /**
  * @brief Base implementation for HTTP client reading using Boost.Beast parsers.
  */
-class InetSocketReadWriteEventHTTPC : public IoEvent {
+class InetSocketReadWriteEventHTTPC : public Event {
 public:
     InetSocketReadWriteEventHTTPC(vector<shared_ptr<File>> file, bool use_ssl = false)
-        : IoEvent(file), tls_enabled_(use_ssl)
+        : Event(file), tls_enabled_(use_ssl)
     {
         if (tls_enabled_)
-            IoUringManager::getInstance().initialize_dependent_event<InetSocketTLSEvent>(this, file, false);
+            AsyncHandler::self().initialize_dependent_event<InetSocketTLSEvent>(this, file, false);
         else
-            IoUringManager::getInstance().initialize_dependent_event<InetSocketReadWriteEventBytes>(this, file);
+            AsyncHandler::self().initialize_dependent_event<InetSocketReadWriteEventBytes>(this, file);
     }
 
     virtual ~InetSocketReadWriteEventHTTPC() {
@@ -81,7 +81,7 @@ public:
     void on_new_data(int, EventType event) override {
         auto res = get<ChildTaskCompletion>(event);
         if (res.return_code <= 0) {
-            IoUringManager::getInstance().finalize_current_task(true, res.return_code);
+            AsyncHandler::self().finalize_current_task(true, res.return_code);
             return;
         }
 
@@ -90,6 +90,10 @@ public:
         } else {
             handle_write(res.return_code);
         }
+    }
+
+    void procedure_update(PUType, CallResponse) override {
+
     }
 
     string get_info() const override {
@@ -112,7 +116,7 @@ protected:
 
         bool done = try_parse();
         if (done) {
-            IoUringManager::getInstance().finalize_current_task(false, 1);
+            AsyncHandler::self().finalize_current_task(false, 1);
             return;
         }
 
@@ -128,14 +132,14 @@ protected:
             arm_write();
             return;
         }
-        IoUringManager::getInstance().finalize_current_task(false, 1);
+        AsyncHandler::self().finalize_current_task(false, 1);
     }
 
     void arm_read() {
         // Prepare space in the flat_buffer for the next read
         auto mutable_buffer = buffer_.prepare(4096);
         if (tls_enabled_) {
-            auto [taskid, success] = IoUringManager::getInstance().call_dependent_function<InetSocketTLSEvent>(
+            auto [taskid, success] = AsyncHandler::self().call_dependent_function<InetSocketTLSEvent>(
                 this,
                 0,
                 &InetSocketTLSEvent::read,
@@ -145,7 +149,7 @@ protected:
             );
             taskid_reader_ = taskid;
         } else {
-            auto [taskid, success] = IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventBytes>(
+            auto [taskid, success] = AsyncHandler::self().call_dependent_function<InetSocketReadWriteEventBytes>(
                 this,
                 0,
                 &InetSocketReadWriteEventBytes::read,
@@ -160,7 +164,7 @@ protected:
     void arm_write() {
         if (write_buffer_.size() == 0) return;
         if (tls_enabled_) {
-            auto [taskid, success] = IoUringManager::getInstance().call_dependent_function<InetSocketTLSEvent>(
+            auto [taskid, success] = AsyncHandler::self().call_dependent_function<InetSocketTLSEvent>(
                 this,
                 0,
                 &InetSocketTLSEvent::write,
@@ -169,7 +173,7 @@ protected:
             );
             taskid_writer_ = taskid;
         } else {
-            auto [taskid, success] = IoUringManager::getInstance().call_dependent_function<InetSocketReadWriteEventBytes>(
+            auto [taskid, success] = AsyncHandler::self().call_dependent_function<InetSocketReadWriteEventBytes>(
                 this,
                 0,
                 &InetSocketReadWriteEventBytes::write,
