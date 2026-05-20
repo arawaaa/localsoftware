@@ -17,9 +17,10 @@
 #include <openssl/sha.h>
 
 #include "common/io_uring_manager.cpp"
-#include "bandwidth_monitor/accept_event.cpp"
-#include "aio_landing/aio_landing_accepter.cpp"
-#include "reverse_proxy/reverse_proxy_accept.cpp"
+#include "test/test.cpp"
+// #include "bandwidth_monitor/accept_event.cpp"
+// #include "aio_landing/aio_landing_accepter.cpp"
+// #include "reverse_proxy/reverse_proxy_accept.cpp"
 #include "logging/visit_stats.cpp"
 
 using namespace std;
@@ -166,26 +167,26 @@ int setup_server_socket(int port) {
 
 void server_func() {
     // Single stack IPv6 for all surfaces outside of homepage, which is dual-stack
-    shared_ptr<File> ws_fd = make_shared<File>(setup_server_socket(SERVER_PORT));
-    if (ws_fd->get() < 0) return;
-
-    shared_ptr<File> ws6_fd = make_shared<File>(setup_server_socket6(SERVER_PORT));
-    if (ws6_fd->get() < 0) return;
-
+    // shared_ptr<File> ws_fd = make_shared<File>(setup_server_socket(SERVER_PORT));
+    // if (ws_fd->get() < 0) return;
+    //
+    // shared_ptr<File> ws6_fd = make_shared<File>(setup_server_socket6(SERVER_PORT));
+    // if (ws6_fd->get() < 0) return;
+    //
     shared_ptr<File> http6_fd = make_shared<File>(setup_server_socket6(HTTP_PORT));
     if (http6_fd->get() < 0) return;
 
     shared_ptr<File> http_fd = make_shared<File>(setup_server_socket(HTTP_PORT));
     if (http_fd->get() < 0) return;
-
-    shared_ptr<File> https_fd = make_shared<File>(setup_server_socket(HTTPS_PORT));
-    if (https_fd->get() < 0) return;
-
-    shared_ptr<File> https6_fd = make_shared<File>(setup_server_socket6(HTTPS_PORT));
-    if (https6_fd->get() < 0) return;
-
-    shared_ptr<File> rphttps_fd = make_shared<File>(setup_server_socket(RP_PORT));
-    if (rphttps_fd->get() < 0) return;
+    //
+    // shared_ptr<File> https_fd = make_shared<File>(setup_server_socket(HTTPS_PORT));
+    // if (https_fd->get() < 0) return;
+    //
+    // shared_ptr<File> https6_fd = make_shared<File>(setup_server_socket6(HTTPS_PORT));
+    // if (https6_fd->get() < 0) return;
+    //
+    // shared_ptr<File> rphttps_fd = make_shared<File>(setup_server_socket(RP_PORT));
+    // if (rphttps_fd->get() < 0) return;
 
     // Initialize io_uring
     struct io_uring ring;
@@ -195,25 +196,25 @@ void server_func() {
     }
 
     auto& instance = AsyncHandler::self(1);
+
     // Setup WebSocket Accept Event
-    auto ws_files = {ws_fd, ws6_fd};
-    instance.initialize_root_event<BandwidthMonitorAcceptEvent>(ws_files, true, "/srv/bwith");
-
-    // Setup HTTP Landing Accept Event
+    // auto ws_files = {ws_fd, ws6_fd};
+    // instance.initialize_root_event<BandwidthMonitorAcceptEvent>(ws_files, true, "/srv/bwith");
+    //
+    // // Setup HTTP Landing Accept Event
     vector<shared_ptr<File>> http_files = {http_fd, http6_fd};
-    instance.initialize_root_event<LandingAccept>(http_files, false, "/srv/landing");
+    // instance.initialize_root_event<LandingAccept>(http_files, false, "/srv/landing");
+    instance.initialize_root_event<TestClass>(http_files);
+    //
+    // // Setup HTTPS Landing Accept Event
+    // vector<shared_ptr<File>> https_files = {https_fd, https6_fd};
+    // instance.initialize_root_event<LandingAccept>(https_files, true, "/srv/landing");
+    //
+    // vector<shared_ptr<File>> rp_files = {rphttps_fd};
+    // instance.initialize_root_event<ReverseProxyAccept>(rp_files, "/srv/rp");
+    // instance.call_root_function<ReverseProxyAccept>(res, &ReverseProxyAccept::prepare_accept);
 
-    // Setup HTTPS Landing Accept Event
-    vector<shared_ptr<File>> https_files = {https_fd, https6_fd};
-    instance.initialize_root_event<LandingAccept>(https_files, true, "/srv/landing");
-
-    vector<shared_ptr<File>> rp_files = {rphttps_fd};
-    instance.initialize_root_event<ReverseProxyAccept>(rp_files, "/srv/rp");
-    instance.call_root_function<ReverseProxyAccept>(res, &ReverseProxyAccept::prepare_accept);
-
-    instance.submit_events(&ring);
-
-    instance.run(&ring, 0);
+    instance.start();
 
     io_uring_queue_exit(&ring);
 }

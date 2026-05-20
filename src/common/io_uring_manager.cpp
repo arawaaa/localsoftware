@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <new>
 #include <variant>
 #include <vector>
@@ -14,6 +15,8 @@
 #include <liburing.h>
 #include <ranges>
 #include <functional>
+#include <iostream>
+#include <thread>
 
 #include <oneapi/tbb.h>
 #include <openssl/ssl.h>
@@ -36,6 +39,17 @@ public:
         return instance;
     }
 
+    void start() {
+        vector<thread> threads;
+        for (size_t i = 0; i < per_thread_data.size(); i++) {
+            run(i);
+            threads.emplace_back(&AsyncHandler::run, this, i);
+        }
+        for (auto &t : threads) {
+            t.join();
+        }
+    }
+
     void run(int tid);
 
     SSL_CTX* get_tls_ctx() {
@@ -51,6 +65,21 @@ public:
         auto f = [args...] mutable {
             return make_shared<Obj>(std::forward<Args>(args)...);
         };
+
+        auto c = [](shared_ptr<Event> ptr, uint64_t id) -> CallResponse {
+            return static_pointer_cast<Obj>(ptr)->init(id);
+        };
+
+        RootStart callinfo {
+            .constructor = f,
+            .init = c,
+            .ti = TargetInfo {
+                .obj_id = get_obj_id(),
+                .proc_id = get_proc_id()
+            }
+        };
+
+        per_thread_data[pt_idx].q.push(callinfo);
     }
 
     typedef unordered_map<uint64_t, CallDataThreaded> CallMap;
@@ -68,6 +97,22 @@ private:
 
     uint64_t get_timer_block() {
         return timer_block_++;
+    }
+
+    uint64_t get_proc_id() {
+        if (r_proc_id_curr == r_proc_id_base + 1000 || !r_p_init) {
+            r_proc_id_base = r_proc_id_curr = 1000 * get_proc_block();
+            r_p_init = true;
+        }
+        return r_proc_id_curr++;
+    }
+
+    uint64_t get_obj_id() {
+        if (r_obj_id_curr == r_obj_id_base + 1000 || !r_o_init) {
+            r_obj_id_base = r_obj_id_curr = 1000 * get_obj_block();
+            r_o_init = true;
+        }
+        return r_obj_id_curr++;
     }
 
     void function_call(CallMap& proc_to_dat, ObjectMap& obj_info, FunctionCall& func, int tid);
@@ -111,10 +156,13 @@ private:
     atomic<uint64_t> obj_block_ = 0;
     atomic<uint64_t> timer_block_ = 0;
 
+    uint64_t r_proc_id_base, r_proc_id_curr; // Upper bound of block is id_base + 1000
+    uint64_t r_obj_id_base, r_obj_id_curr;
+    bool r_o_init = false, r_p_init = false;
     int pt_idx = 0;
 
     struct alignas(hardware_destructive_interference_size) PerThread {
-        typedef variant<monostate, ConstructorCall, FunctionCall, ProcedureUpdate, Delete, Data> EventVariant;
+        typedef variant<monostate, ConstructorCall, FunctionCall, ProcedureUpdate, Delete, Data, RootStart> EventVariant;
         typedef oneapi::tbb::concurrent_bounded_queue<EventVariant> WorkQueue;
         WorkQueue q;
 
@@ -178,7 +226,7 @@ class ThreadData {
 
         ~Context() {
             for (auto [thread, obj, f] : data.new_objs) {
-                data.obj_info[data.source_object].children.insert(obj, {});
+                data.obj_info[data.source_object].children[obj] = {};
 
                 ConstructorCall callinfo {
                     .constructor = f,
@@ -425,21 +473,24 @@ void AsyncHandler::function_call(CallMap& proc_to_dat, ObjectMap& obj_info, Func
     }
 
     CallResponse resp = func.call(obj_info[func.ti.obj_id].ptr, func.ti.proc_id);
-    per_thread_data[func.ci.thread_id].q.push(
-        ProcedureUpdate {
-            .type = PUType::StartConfirm,
-            .resp = resp,
-            .ci = CallerInfo {
-                .thread_id = tid,
-                .obj_id = func.ti.obj_id,
-                .proc_id = func.ti.proc_id
-            },
-            .ti = TargetInfo {
-                .obj_id = func.ci.obj_id,
-                .proc_id = func.ci.proc_id
+
+    if (static_cast<uint64_t>(func.ci.thread_id) < per_thread_data.size()) {
+        per_thread_data[func.ci.thread_id].q.push(
+            ProcedureUpdate {
+                .type = PUType::StartConfirm,
+                .resp = resp,
+                .ci = CallerInfo {
+                    .thread_id = tid,
+                    .obj_id = func.ti.obj_id,
+                    .proc_id = func.ti.proc_id
+                },
+                .ti = TargetInfo {
+                    .obj_id = func.ci.obj_id,
+                    .proc_id = func.ci.proc_id
+                }
             }
-        }
-    );
+        );
+    }
 
     CallDataThreaded& cd = proc_to_dat[func.ti.proc_id];
     cd.op_hint = resp.op_hint;
@@ -450,6 +501,8 @@ void AsyncHandler::function_call(CallMap& proc_to_dat, ObjectMap& obj_info, Func
         auto [failed, code] = resp.ret.value();
         cd.status = failed ? CallStatus::Failed : CallStatus::Finished;
         cd.return_code = code;
+
+        if (static_cast<uint64_t>(func.ci.thread_id) >= per_thread_data.size()) return;
 
         // We don't iterate through back_notify since at this point only the notifiable entity is the
         // calling procedure at thread_id.
@@ -490,26 +543,67 @@ void AsyncHandler::run(int tid) {
     // Communication object for events
     ThreadData datum(*this, tid, proc_to_dat, obj_info, timers, &ring);
 
+    PerThread& tdata = per_thread_data[tid];
     while (true) {
         __kernel_timespec ts ={
-            .tv_sec = 10,
+            .tv_sec = 1,
             .tv_nsec = 0
         };
         // Wait for completions
-        if (io_uring_wait_cqes_min_timeout(&ring, cqe, 128, &ts, 200, nullptr) < 0) {
+        int res = io_uring_wait_cqes_min_timeout(&ring, cqe, 128, &ts, 0, nullptr);
+        if (res != -ETIME && res < 0) {
             continue;
         }
 
+        int i = 0;
+        for (io_uring_cqe** ptr = cqe; *ptr && ptr - cqe < 128; ptr++) {
+            IoUringAttached* uringdata = reinterpret_cast<IoUringAttached*>(io_uring_cqe_get_data(*ptr));
+            if (holds_alternative<EventData>(uringdata->data)) {
+                cout << "Event data" << endl;
+                EventData& data = std::get<EventData>(uringdata->data);
+
+                if (!obj_info.contains(data.obj_id) || !proc_to_dat.contains(data.proc_id)) { // All class operations occur on the same thread, so this is safe
+                    delete uringdata;
+                    i++;
+                    continue;
+                }
+
+                Data dt {
+                    .ci = CallerInfo {
+                        .thread_id = -1,
+                        .obj_id = numeric_limits<uint64_t>::max(), // Nonexistent originator
+                        .proc_id = numeric_limits<uint64_t>::max()
+                    },
+                    .ti = TargetInfo {
+                        .obj_id = data.obj_id,
+                        .proc_id = data.proc_id
+                    },
+                    .data = IoUringResult {
+                        .calling_id = data.proc_id,
+                        .op = data.op,
+                        .res = (*ptr)->res
+                    },
+                };
+
+                per_thread_data[tid].q.push(dt);
+            }
+            i++;
+            delete uringdata;
+        }
+
+        io_uring_cq_advance(&ring, i);
+
         // Multithreading support
 
-        PerThread& tdata = per_thread_data[tid];
-
-        variant<monostate, ConstructorCall, FunctionCall, ProcedureUpdate, Delete, Data> result;
+        variant<monostate, ConstructorCall, FunctionCall, ProcedureUpdate, Delete, Data, RootStart> result;
         tdata.q.try_pop(result);
 
         visit(overloaded {
             [&] (ConstructorCall& construct) mutable {
-                obj_info[construct.ti.obj_id].ptr->uring_data_.thread_data = &datum;
+                // We split construction into two phases
+                // The actual constructor is local-only
+                // A secondary function construct_with_global() is allowed to
+                // make calls, etc
 
                 auto ctx = datum.begin_recording(construct.ti.obj_id);
                 obj_info.emplace(construct.ti.obj_id, ObjectDataThreaded {
@@ -518,6 +612,10 @@ void AsyncHandler::run(int tid) {
                     .parents = {{construct.ci.thread_id, construct.ci.obj_id}},
                     .children = {}
                 });
+
+                obj_info[construct.ti.obj_id].ptr->uring_data_.thread_data = &datum;
+                obj_info[construct.ti.obj_id].ptr->construct_with_global();
+
             },
             [&, this] (FunctionCall& func) {
                 obj_info[func.ti.obj_id].ptr->uring_data_.thread_data = &datum;
@@ -586,10 +684,40 @@ void AsyncHandler::run(int tid) {
                     per_thread_data[get<0>(proc_to_dat[on_data.ti.proc_id].back_notify)].q.push(completed_notification);
                 }
             },
+            [&](RootStart& rs) {
+                // Dissemble into Constructor and FunctionCall, do nothing else
+                ConstructorCall cons = {
+                    .constructor = rs.constructor,
+                    .ci = CallerInfo {
+                        .thread_id = -1,
+                        .obj_id = numeric_limits<uint64_t>::max(),
+                        .proc_id = numeric_limits<uint64_t>::max()
+                    },
+                    .ti = TargetInfo {
+                        .obj_id = rs.ti.obj_id,
+                        .proc_id = numeric_limits<uint64_t>::max()
+                    }
+                };
+
+                FunctionCall fun = {
+                    .call = rs.init,
+                    .ci = CallerInfo {
+                        .thread_id = -1,
+                        .obj_id = numeric_limits<uint64_t>::max(),
+                        .proc_id = numeric_limits<uint64_t>::max()
+                    },
+                    .ti = rs.ti
+                };
+
+                per_thread_data[tid].q.push(cons);
+                per_thread_data[tid].q.push(fun);
+            },
             [] (monostate) {
 
             }
         }, result);
+
+        io_uring_submit(&ring);
     }
 }
 
@@ -626,7 +754,8 @@ uint64_t Event::c(size_t idx, CallResponse(Obj::*fun)(uint64_t, Args...), FnArgs
 template <typename Obj, typename... Args, typename... FnArgs>
 uint64_t Event::c(CallResponse(Obj::*fun)(uint64_t, Args...), FnArgs... args) {
     auto& evs_ty = uring_data_.sub_events.at(type_index(typeid(Obj)));
-    auto it = find(evs_ty.begin(), evs_ty.end(), nullopt);
+    cout << evs_ty.size() << endl;
+    auto it = find_if_not(evs_ty.begin(), evs_ty.end(), [](auto& ev) {return ev == nullopt;});
     if (it == evs_ty.end())
         throw runtime_error{"No event for call found."};
 

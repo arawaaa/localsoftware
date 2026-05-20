@@ -23,6 +23,10 @@ public:
         i<InetSocketReadWriteEventHTTP>(file, enable_tls);
     }
 
+    void construct_with_global() override {
+
+    }
+
     CallResponse start(uint64_t) {
         c(&InetSocketReadWriteEventHTTP::read_http);
         op_read_ = true;
@@ -38,8 +42,8 @@ public:
                 }
 
                 if (op_read_) {
-                    AsyncHandler::self().cancel_timer(timer_);
-                    auto req = AsyncHandler::self().get_data<InetSocketReadWriteEventHTTP>(this, 0, child.task_id).value()->get();
+                    // AsyncHandler::self().cancel_timer(timer_);
+                    auto req = direct_access(0, &InetSocketReadWriteEventHTTP::get_data, child.task_id).value()->get();
                     handle_request(req);
                 } else {
                     timer_ = timer(ts);

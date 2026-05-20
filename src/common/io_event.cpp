@@ -42,6 +42,8 @@ public:
      */
     explicit Event(vector<shared_ptr<File>> file) : files_(file) {}
 
+    virtual void construct_with_global() = 0;
+
     Event() {}
 
     virtual ~Event();
@@ -95,6 +97,8 @@ public:
     void d(size_t idx);
 
     uint64_t timer(__kernel_timespec ts);
+
+    void cancel_timer(uint64_t timerid);
 
     // Directly accesses the function in target object. No synchronization - dangerous
     template <typename R, typename Obj, typename... Args>

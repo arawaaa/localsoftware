@@ -24,10 +24,14 @@ public:
     InetSocketReadWriteEventHTTP(vector<shared_ptr<File>> file, bool use_ssl = false)
         : Event(file), tls_enabled_(use_ssl)
     {
+
+    }
+
+    void construct_with_global() override {
         if (tls_enabled_)
-            i<InetSocketTLSEvent>(file, true);
+            i<InetSocketTLSEvent>(files_, true);
         else
-            i<InetSocketReadWriteEventBytes>(file);
+            i<InetSocketReadWriteEventBytes>(files_);
     }
 
     virtual ~InetSocketReadWriteEventHTTP() {
@@ -49,8 +53,8 @@ public:
     /**
      * @brief Returns the completed parser by moving it out.
      */
-    pair<GetDataInfo, unique_ptr<http::request_parser<http::string_body>>> get_data(uint64_t) {
-        return {GetDataInfo {true}, std::move(parser_)};
+    unique_ptr<http::request_parser<http::string_body>> get_data(uint64_t) {
+        return std::move(parser_);
     }
 
     /**

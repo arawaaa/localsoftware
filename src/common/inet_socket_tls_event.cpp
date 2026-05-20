@@ -27,12 +27,14 @@ public:
             throw runtime_error{"Failed to create ssl object"};
         }
 
-        i<InetSocketReadWriteEventBytes>(file);
-
         readbuf_ = BIO_new(BIO_s_mem());
         writebuf_ = BIO_new(BIO_s_mem());
         SSL_set_bio(ssl_, readbuf_, writebuf_);
         state_ = TLSState::WaitHello;
+    }
+
+    void construct_with_global() override {
+        i<InetSocketReadWriteEventBytes>(files_);
     }
 
     virtual ~InetSocketTLSEvent() {

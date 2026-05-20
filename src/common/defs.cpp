@@ -78,6 +78,14 @@ struct TargetInfo {
     uint64_t proc_id;
 };
 
+struct RootStart {
+    typedef function<shared_ptr<Event>()> ConstructType;
+    typedef function<CallResponse(shared_ptr<Event>, uint64_t id)> CallType;
+    ConstructType constructor;
+    CallType init;
+    TargetInfo ti;
+};
+
 struct ConstructorCall {
     typedef function<shared_ptr<Event>()> Type;
     Type constructor;
@@ -116,7 +124,7 @@ struct Data {
 };
 
 struct QueueContainer {
-    oneapi::tbb::concurrent_queue<variant<ConstructorCall, FunctionCall, Delete, Data>> a;
+    oneapi::tbb::concurrent_queue<variant<ConstructorCall, FunctionCall, Delete, Data, RootStart>> a;
 };
 
 // Types passed within a variant to the user data in IoUring calls
