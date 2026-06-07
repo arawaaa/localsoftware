@@ -85,7 +85,7 @@ public:
 
                 auto client_file = vector<shared_ptr<File>>{make_shared<File>(uri_res.res)};
 
-                int idx = i<AioLandingHTTP>(std::move(client_file), use_tls_, http_manager_);
+                int idx = i<AioLandingHTTP>(std::move(client_file), use_tls_, &http_manager_);
                 uint64_t taskid = c(idx, &AioLandingHTTP::start);
                 indices[taskid] = idx;
             }

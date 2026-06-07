@@ -57,18 +57,6 @@ const EducationSection = () => {
             Education
           </Typography>
 
-          <Box sx={{ py: 2, mb: 4, borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }}>
-            <Typography variant="h5" component="h3" sx={{ fontWeight: 'bold', color: 'primary.main', mb: 1 }}>
-              University of Illinois Urbana-Champaign
-            </Typography>
-            <Typography variant="h6" sx={{ fontWeight: 'medium', mb: 1, color: 'text.primary' }}>
-              MS Biomedical Imaging
-            </Typography>
-            <Typography variant="body1" sx={{ fontSize: '1.1rem', color: 'text.secondary' }}>
-              Incoming Graduate Student | Fall 2026
-            </Typography>
-          </Box>
-
           <Box sx={{ py: 2 }}>
             <Typography variant="h5" component="h3" sx={{ fontWeight: 'bold', color: 'primary.main', mb: 1 }}>
               University of Illinois Urbana-Champaign

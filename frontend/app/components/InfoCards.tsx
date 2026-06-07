@@ -3,8 +3,17 @@ import { Card, CardContent, Typography, Container, Box, Stack } from '@mui/mater
 
 const experienceData = [
   {
+    title: "Software Engineer",
+    subtitle: "Allstate | May 2026 - Present",
+    bullets: [
+      'Working with Spring Boot to create and maintain REST services',
+      'Maintaining a large microservices codebase',
+      'Agile development'
+    ]
+  },
+  {
     title: 'Mechanistic Interpretability',
-    subtitle: 'Independent Study | June 2025 – Present',
+    subtitle: 'Independent Study | June 2025 – Present (Hobby)',
     bullets: [
       'Exploring advanced AI safety through techniques like Activation Patching and Linear Probes.',
       'Conducting experiments on local models involving ablation and token prefill.',

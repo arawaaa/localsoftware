@@ -23,10 +23,11 @@ const projectData = [
     title: 'IO_URING Webserver & Logger (Serves this website)',
     tech: 'C++20, io_uring, OpenSSL, Google Compute Engine, Linux Systems',
     bullets: [
-      'Contains a high-performance HTTP server with TLS implementation, a MCP server for home automation integration, and an extensible backend for future protocols (FTP).',
+      'Contains a high-performance HTTP server with TLS implementation, and an extensible backend for future protocols (FTP).',
       'Leverages the asynchronous io_uring Linux system call to handle multiple clients efficiently from a single-threaded event loop.',
       'Logs and analyzes traffic traversing a WiFi-Ethernet bridge colocated with the server.',
-      'Utilizes Google Compute Engine for external communication and secure tunneling.'
+      'Utilizes Google Compute Engine for external communication and secure tunneling.',
+      '(June 2026) Limited multithreading support, with autoscaling on the horizon'
     ],
   },
   {

@@ -40,15 +40,14 @@ public:
     }
 
     void start() {
-        // vector<thread> threads;
-        // for (size_t i = 0; i < per_thread_data.size(); i++) {
-        //     run(i);
-        //     threads.emplace_back(&AsyncHandler::run, this, i);
-        // }
-        // for (auto &t : threads) {
-        //     t.join();
-        // }
-        run(0);
+        vector<thread> threads;
+        for (size_t i = 0; i < per_thread_data.size(); i++) {
+            run(i);
+            threads.emplace_back(&AsyncHandler::run, this, i);
+        }
+        for (auto &t : threads) {
+            t.join();
+        }
     }
 
     void run(int tid);
@@ -578,7 +577,6 @@ void AsyncHandler::run(int tid) {
             IoUringAttached* uringdata = reinterpret_cast<IoUringAttached*>(io_uring_cqe_get_data(*ptr));
             if (holds_alternative<EventData>(uringdata->data)) {
                 EventData& data = std::get<EventData>(uringdata->data);
-                cout << (*ptr)->res << endl;
 
                 if (!obj_info.contains(data.obj_id) || !proc_to_dat.contains(data.proc_id)) { // All class operations occur on the same thread, so this is safe
                     delete uringdata;
@@ -604,7 +602,6 @@ void AsyncHandler::run(int tid) {
                 };
 
                 per_thread_data[tid].q.push(dt);
-                cout << "Pushed data object to thread" << endl;
             }
             i++;
             delete uringdata;
@@ -685,7 +682,6 @@ void AsyncHandler::run(int tid) {
                 obj_info.erase(del.ti.obj_id);
             },
             [&] (Data& on_data) {
-                cout << "Data" << endl;
                 obj_info[on_data.ti.obj_id].ptr->local_data_.thread_data = &datum;
 
                 auto ctx = datum.begin_recording(

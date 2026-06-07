@@ -178,23 +178,17 @@ void server_func() {
 
     shared_ptr<File> http_fd = make_shared<File>(setup_server_socket(HTTP_PORT));
     if (http_fd->get() < 0) return;
-    //
-    // shared_ptr<File> https_fd = make_shared<File>(setup_server_socket(HTTPS_PORT));
-    // if (https_fd->get() < 0) return;
-    //
-    // shared_ptr<File> https6_fd = make_shared<File>(setup_server_socket6(HTTPS_PORT));
-    // if (https6_fd->get() < 0) return;
+
+    shared_ptr<File> https_fd = make_shared<File>(setup_server_socket(HTTPS_PORT));
+    if (https_fd->get() < 0) return;
+
+    shared_ptr<File> https6_fd = make_shared<File>(setup_server_socket6(HTTPS_PORT));
+    if (https6_fd->get() < 0) return;
     //
     // shared_ptr<File> rphttps_fd = make_shared<File>(setup_server_socket(RP_PORT));
     // if (rphttps_fd->get() < 0) return;
 
     // Initialize io_uring
-    struct io_uring ring;
-    if (io_uring_queue_init(512, &ring, 0) < 0) {
-        perror("io_uring_queue_init");
-        return;
-    }
-
     auto& instance = AsyncHandler::self(1);
 
     // Setup WebSocket Accept Event
@@ -203,20 +197,18 @@ void server_func() {
     //
     // // Setup HTTP Landing Accept Event
     vector<shared_ptr<File>> http_files = {http_fd, http6_fd};
-    // instance.initialize_root_event<LandingAccept>(http_files, false, "/srv/landing");
-    instance.initialize_root_event<TestClass>(http_files);
+    instance.initialize_root_event<LandingAccept>(http_files, false, "/srv/landing");
+    // instance.initialize_root_event<TestClass>(http_files);
     //
     // // Setup HTTPS Landing Accept Event
-    // vector<shared_ptr<File>> https_files = {https_fd, https6_fd};
-    // instance.initialize_root_event<LandingAccept>(https_files, true, "/srv/landing");
+    vector<shared_ptr<File>> https_files = {https_fd, https6_fd};
+    instance.initialize_root_event<LandingAccept>(https_files, true, "/srv/landing");
     //
     // vector<shared_ptr<File>> rp_files = {rphttps_fd};
     // instance.initialize_root_event<ReverseProxyAccept>(rp_files, "/srv/rp");
     // instance.call_root_function<ReverseProxyAccept>(res, &ReverseProxyAccept::prepare_accept);
 
     instance.start();
-
-    io_uring_queue_exit(&ring);
 }
 
 int main() {
