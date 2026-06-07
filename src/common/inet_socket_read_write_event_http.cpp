@@ -35,7 +35,6 @@ public:
     }
 
     virtual ~InetSocketReadWriteEventHTTP() {
-
     }
 
     /**
@@ -45,8 +44,9 @@ public:
     CallResponse read_http(uint64_t) {
         read_op_ = true;
         parser_ = make_unique<http::request_parser<http::string_body>>();
+        std::cout << "Parser init" << std::endl;
 
-        handle_read(0);
+        arm_read();
         return {"Read HTTP", true, nullopt, OP_HINT_READ};
     }
 

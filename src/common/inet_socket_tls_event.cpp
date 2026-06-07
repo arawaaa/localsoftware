@@ -212,8 +212,7 @@ protected:
             task_bytes_read_ = taskid;
             task_bytes_r_fin_ = false;
         } else {
-            // Async attach has to be a bit different...
-            AsyncHandler::self().attach_child(task_bytes_read_);
+            attach(task_bytes_read_);
         }
     }
 
@@ -224,7 +223,7 @@ protected:
             task_bytes_write_ = taskid;
             task_bytes_w_fin_ = false;
         } else {
-            AsyncHandler::self().attach_child(task_bytes_write_);
+            attach(task_bytes_write_);
         }
     }
 };

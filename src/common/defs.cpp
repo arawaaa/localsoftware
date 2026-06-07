@@ -9,6 +9,7 @@
 #include <utility>
 #include <set>
 #include <map>
+#include <any>
 #include <unordered_set>
 #include <unordered_map>
 
@@ -91,6 +92,8 @@ struct ConstructorCall {
     Type constructor;
     CallerInfo ci;
     TargetInfo ti;
+    // Type erased pointer for shared context container
+    shared_ptr<std::any> uring_data;
 };
 
 struct FunctionCall {
@@ -121,6 +124,11 @@ struct Data {
     CallerInfo ci;
     TargetInfo ti;
     EventType data;
+};
+
+struct ConstructResponse {
+    uint64_t target, constructed;
+    shared_ptr<Event> ev;
 };
 
 struct QueueContainer {

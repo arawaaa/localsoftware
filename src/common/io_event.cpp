@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <memory>
 #include <map>
@@ -28,11 +29,17 @@ public:
         weak_ptr<Event> event;
     };
 
+    // In single-thread case, low overhead due to futex
+    // Lock shared when reading, lock unique when writing
     struct IoUringData {
-        int id;
-        ThreadData* thread_data;
         unordered_map<type_index, vector<optional<EventInfo>>> sub_events;
         map<uint64_t, type_index> awaiting_resolve;
+        shared_mutex mut;
+    };
+
+    struct LocalData {
+        int id;
+        ThreadData* thread_data;
         Event* outer_event;
     };
 
@@ -96,20 +103,25 @@ public:
     template <typename Obj>
     void d(size_t idx);
 
+    void attach(uint64_t id);
+
     uint64_t timer(__kernel_timespec ts);
 
     void cancel_timer(uint64_t timerid);
+
+    void resolve(uint64_t id, shared_ptr<Event> ptr);
 
     // Directly accesses the function in target object. No synchronization - dangerous
     template <typename R, typename Obj, typename... Args>
     optional<R> direct_access(size_t idx, R(Obj::*fun)(Args...), Args... args) {
         shared_ptr<Obj> ptr = static_pointer_cast<Obj>(
-            uring_data_.sub_events.at(type_index(typeid(Obj))).at(idx).value().event.lock());
+            uring_data_->sub_events.at(type_index(typeid(Obj))).at(idx).value().event.lock());
         if (!ptr) return nullopt;
         return (ptr.get()->*fun)(args...);
     }
 
-    IoUringData uring_data_;
+    shared_ptr<IoUringData> uring_data_;
+    LocalData local_data_;
 
 protected:
     vector<shared_ptr<File>> files_;

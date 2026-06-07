@@ -40,14 +40,15 @@ public:
     }
 
     void start() {
-        vector<thread> threads;
-        for (size_t i = 0; i < per_thread_data.size(); i++) {
-            run(i);
-            threads.emplace_back(&AsyncHandler::run, this, i);
-        }
-        for (auto &t : threads) {
-            t.join();
-        }
+        // vector<thread> threads;
+        // for (size_t i = 0; i < per_thread_data.size(); i++) {
+        //     run(i);
+        //     threads.emplace_back(&AsyncHandler::run, this, i);
+        // }
+        // for (auto &t : threads) {
+        //     t.join();
+        // }
+        run(0);
     }
 
     void run(int tid);
@@ -162,7 +163,7 @@ private:
     int pt_idx = 0;
 
     struct alignas(hardware_destructive_interference_size) PerThread {
-        typedef variant<monostate, ConstructorCall, FunctionCall, ProcedureUpdate, Delete, Data, RootStart> EventVariant;
+        typedef variant<monostate, ConstructorCall, FunctionCall, ProcedureUpdate, Delete, Data, RootStart, ConstructResponse> EventVariant;
         typedef oneapi::tbb::concurrent_bounded_queue<EventVariant> WorkQueue;
         WorkQueue q;
 
@@ -184,6 +185,9 @@ private:
     map<type_index, vector<shared_ptr<Event>>> root_events_;
 };
 
+// Badly designed class; we should record within the event class
+// Causes event implementation methods to be defined in this file
+// polluting it
 class ThreadData {
     int thread;
 
@@ -192,6 +196,7 @@ class ThreadData {
     AsyncHandler::CallMap& proc_to_dat;
     AsyncHandler::ObjectMap& obj_info;
     AsyncHandler::TimerMap& timers;
+    map<uint64_t, list<pair<uint64_t, uint64_t>>>& also_notify;
 
     uint64_t proc_id_base, proc_id_curr; // Upper bound of block is id_base + 1000
     uint64_t obj_id_base, obj_id_curr;
@@ -202,7 +207,7 @@ class ThreadData {
     // thread, object, procedure
     list<tuple<int, uint64_t, uint64_t, FunctionCall::Type>> procedure_calls;
     list<tuple<int, uint64_t>> deleted_ids;
-    list<tuple<int, uint64_t, ConstructorCall::Type>> new_objs;
+    list<tuple<int, uint64_t, ConstructorCall::Type, shared_ptr<any>>> new_objs;
     list<tuple<int, function<void(io_uring_sqe*)>>> pending_uring;
     list<tuple<uint64_t, __kernel_timespec>> pending_timers;
 
@@ -225,7 +230,7 @@ class ThreadData {
         }
 
         ~Context() {
-            for (auto [thread, obj, f] : data.new_objs) {
+            for (auto [thread, obj, f, ptr] : data.new_objs) {
                 data.obj_info[data.source_object].children[obj] = {};
 
                 ConstructorCall callinfo {
@@ -238,7 +243,8 @@ class ThreadData {
                     .ti = TargetInfo {
                         .obj_id = obj,
                         .proc_id = numeric_limits<uint64_t>::max()
-                    }
+                    },
+                    .uring_data = ptr
                 };
 
                 data.instance.per_thread_data[thread].q.push(callinfo);
@@ -332,11 +338,13 @@ class ThreadData {
 public:
     ThreadData(AsyncHandler& instance, int thread,
                AsyncHandler::CallMap& cm, AsyncHandler::ObjectMap& om,
-               AsyncHandler::TimerMap& tm, io_uring* ring) :
+               AsyncHandler::TimerMap& tm, io_uring* ring,
+               map<uint64_t, list<pair<uint64_t, uint64_t>>>& also_notify) :
         ring(ring),
         proc_to_dat(cm),
         obj_info(om),
         timers(tm),
+        also_notify(also_notify),
         instance(instance),
         thread(thread)
     {
@@ -361,7 +369,7 @@ public:
         {
             lock_guard lu(instance.per_thread_data[thread].stats);
             if (instance.per_thread_data[thread].load_avg < 0.8) {
-                new_objs.emplace_back(thread, id, f);
+                new_objs.emplace_back(thread, id, f, shared_ptr<any>());
                 return {thread, id};
             }
         }
@@ -385,10 +393,10 @@ public:
         }
 
         if (min_amt > 0.2 && min_thread_0 != -1) {
-            new_objs.emplace_back(min_thread_0, id, f);
+            new_objs.emplace_back(min_thread_0, id, f, shared_ptr<any>());
             return {min_thread_0, id};
         } else {
-            new_objs.emplace_back(min_thread, id, f);
+            new_objs.emplace_back(min_thread, id, f, shared_ptr<any>());
             return {min_thread, id};
         }
     }
@@ -439,8 +447,17 @@ public:
         return id;
     }
 
+    void cancel_timer(uint64_t timerid) {
+        if (!timers.contains(timerid)) return;
+        pending_timers.emplace_back(timerid, __kernel_timespec{0, 0});
+    }
+
+    void attach(uint64_t id) {
+        also_notify[id].emplace_back(source_object, source_proc);
+    }
+
     uint64_t get_proc_id() {
-        if (proc_id_curr == proc_id_base + 1000 || !p_init) {
+        if (!p_init || proc_id_curr == proc_id_base + 1000) {
             proc_id_base = proc_id_curr = 1000 * instance.get_proc_block();
             p_init = true;
         }
@@ -448,7 +465,7 @@ public:
     }
 
     uint64_t get_obj_id() {
-        if (obj_id_curr == obj_id_base + 1000 || !o_init) {
+        if (!o_init || obj_id_curr == obj_id_base + 1000) {
             obj_id_base = obj_id_curr = 1000 * instance.get_obj_block();
             o_init = true;
         }
@@ -456,7 +473,7 @@ public:
     }
 
     uint64_t get_tim_id() {
-        if (tim_id_curr == tim_id_base + 1000 || !t_init) {
+        if (!t_init || tim_id_curr == tim_id_base + 1000) {
             tim_id_base = tim_id_curr = 1000 * instance.get_obj_block();
             t_init = true;
         }
@@ -532,6 +549,7 @@ void AsyncHandler::run(int tid) {
     CallMap proc_to_dat;
     ObjectMap obj_info;
     TimerMap timers;
+    map<uint64_t, list<pair<uint64_t, uint64_t>>> also_notify;
     io_uring_cqe *cqe[128] = {nullptr};
 
     io_uring ring;
@@ -541,13 +559,13 @@ void AsyncHandler::run(int tid) {
     }
 
     // Communication object for events
-    ThreadData datum(*this, tid, proc_to_dat, obj_info, timers, &ring);
+    ThreadData datum(*this, tid, proc_to_dat, obj_info, timers, &ring, also_notify);
 
     PerThread& tdata = per_thread_data[tid];
     while (true) {
         __kernel_timespec ts ={
-            .tv_sec = 1,
-            .tv_nsec = 0
+            .tv_sec = 0,
+            .tv_nsec = 100000
         };
         // Wait for completions
         int res = io_uring_wait_cqes_min_timeout(&ring, cqe, 128, &ts, 0, nullptr);
@@ -559,8 +577,8 @@ void AsyncHandler::run(int tid) {
         for (io_uring_cqe** ptr = cqe; *ptr && ptr - cqe < 128; ptr++) {
             IoUringAttached* uringdata = reinterpret_cast<IoUringAttached*>(io_uring_cqe_get_data(*ptr));
             if (holds_alternative<EventData>(uringdata->data)) {
-                cout << "Event data" << endl;
                 EventData& data = std::get<EventData>(uringdata->data);
+                cout << (*ptr)->res << endl;
 
                 if (!obj_info.contains(data.obj_id) || !proc_to_dat.contains(data.proc_id)) { // All class operations occur on the same thread, so this is safe
                     delete uringdata;
@@ -586,6 +604,7 @@ void AsyncHandler::run(int tid) {
                 };
 
                 per_thread_data[tid].q.push(dt);
+                cout << "Pushed data object to thread" << endl;
             }
             i++;
             delete uringdata;
@@ -595,7 +614,7 @@ void AsyncHandler::run(int tid) {
 
         // Multithreading support
 
-        variant<monostate, ConstructorCall, FunctionCall, ProcedureUpdate, Delete, Data, RootStart> result;
+        variant<monostate, ConstructorCall, FunctionCall, ProcedureUpdate, Delete, Data, RootStart, ConstructResponse> result;
         tdata.q.try_pop(result);
 
         visit(overloaded {
@@ -613,23 +632,37 @@ void AsyncHandler::run(int tid) {
                     .children = {}
                 });
 
-                obj_info[construct.ti.obj_id].ptr->uring_data_.thread_data = &datum;
+                if (construct.uring_data) {
+                    obj_info[construct.ti.obj_id].ptr->uring_data_ = reinterpret_pointer_cast<Event::IoUringData>(construct.uring_data);
+                } else {
+                    obj_info[construct.ti.obj_id].ptr->uring_data_ = make_shared<Event::IoUringData>();
+                }
+                obj_info[construct.ti.obj_id].ptr->local_data_.thread_data = &datum;
                 obj_info[construct.ti.obj_id].ptr->construct_with_global();
 
+                if (construct.ci.thread_id >= 0
+                    && construct.ci.obj_id != numeric_limits<uint64_t>::max()) {
+                    auto resp = ConstructResponse {
+                        .target = construct.ci.obj_id,
+                        .constructed = construct.ti.obj_id,
+                        .ev = obj_info[construct.ti.obj_id].ptr
+                    };
+                    per_thread_data[construct.ci.thread_id].q.push(resp);
+                }
             },
             [&, this] (FunctionCall& func) {
-                obj_info[func.ti.obj_id].ptr->uring_data_.thread_data = &datum;
+                obj_info[func.ti.obj_id].ptr->local_data_.thread_data = &datum;
 
                 auto ctx = datum.begin_recording(func.ti.obj_id, func.ti.proc_id);
                 function_call(proc_to_dat, obj_info, func, tid);
             },
             [&] (ProcedureUpdate& upd) {
-                obj_info[upd.ti.obj_id].ptr->uring_data_.thread_data = &datum;
+                obj_info[upd.ti.obj_id].ptr->local_data_.thread_data = &datum;
 
                 obj_info[upd.ti.obj_id].ptr->start_response(upd.ci.proc_id, upd.resp);
             },
             [&, this] (Delete& del) mutable {
-                obj_info[del.ti.obj_id].ptr->uring_data_.thread_data = &datum;
+                obj_info[del.ti.obj_id].ptr->local_data_.thread_data = &datum;
 
                 auto& children = obj_info[del.ti.obj_id].children;
                 // Propagate deletions
@@ -652,7 +685,8 @@ void AsyncHandler::run(int tid) {
                 obj_info.erase(del.ti.obj_id);
             },
             [&] (Data& on_data) {
-                obj_info[on_data.ti.obj_id].ptr->uring_data_.thread_data = &datum;
+                cout << "Data" << endl;
+                obj_info[on_data.ti.obj_id].ptr->local_data_.thread_data = &datum;
 
                 auto ctx = datum.begin_recording(
                     on_data.ti.obj_id, on_data.ti.proc_id);
@@ -683,6 +717,17 @@ void AsyncHandler::run(int tid) {
 
                     per_thread_data[get<0>(proc_to_dat[on_data.ti.proc_id].back_notify)].q.push(completed_notification);
                 }
+
+                if (also_notify.contains(on_data.ti.proc_id)) {
+                    for (auto [obj, proc] : also_notify[on_data.ti.proc_id]) {
+                        Data copy = on_data;
+                        copy.ti = TargetInfo {
+                            .obj_id = obj,
+                            .proc_id = proc
+                        };
+                        per_thread_data[tid].q.push(copy);
+                    }
+                }
             },
             [&](RootStart& rs) {
                 // Dissemble into Constructor and FunctionCall, do nothing else
@@ -696,7 +741,8 @@ void AsyncHandler::run(int tid) {
                     .ti = TargetInfo {
                         .obj_id = rs.ti.obj_id,
                         .proc_id = numeric_limits<uint64_t>::max()
-                    }
+                    },
+                    .uring_data = shared_ptr<any>()
                 };
 
                 FunctionCall fun = {
@@ -711,6 +757,9 @@ void AsyncHandler::run(int tid) {
 
                 per_thread_data[tid].q.push(cons);
                 per_thread_data[tid].q.push(fun);
+            },
+            [&] (ConstructResponse& cs) {
+                obj_info[cs.target].ptr->resolve(cs.constructed, cs.ev);
             },
             [] (monostate) {
 
@@ -727,9 +776,10 @@ size_t Event::i(Args... args) {
         return make_shared<Obj>(std::forward<Args>(args)...);
     };
 
-    auto [thread, id] = uring_data_.thread_data->init(f);
-    auto& vec_evs = uring_data_.sub_events[type_index(typeid(Obj))];
+    auto [thread, id] = local_data_.thread_data->init(f);
+    auto& vec_evs = uring_data_->sub_events[type_index(typeid(Obj))];
 
+    uring_data_->awaiting_resolve.emplace(id, type_index(typeid(Obj)));
     auto it = find(vec_evs.begin(), vec_evs.end(), nullopt);
     if (it == vec_evs.end()) {
         vec_evs.emplace_back(EventInfo {id, {thread}, weak_ptr<Event>()});
@@ -738,7 +788,6 @@ size_t Event::i(Args... args) {
         it->emplace(EventInfo {id, {thread}, weak_ptr<Event>()});
         return it - vec_evs.begin();
     }
-    return 0;
 }
 
 template <typename Obj, typename... Args, typename... FnArgs>
@@ -747,14 +796,13 @@ uint64_t Event::c(size_t idx, CallResponse(Obj::*fun)(uint64_t, Args...), FnArgs
         return (static_pointer_cast<Obj>(obj).get()->*fun)(id, std::forward<Args>(args)...);
     };
 
-    EventInfo& info = uring_data_.sub_events.at(type_index(typeid(Obj))).at(idx).value();
-    return uring_data_.thread_data->call(info.thread_id, info.object_id, f);
+    EventInfo& info = uring_data_->sub_events.at(type_index(typeid(Obj))).at(idx).value();
+    return local_data_.thread_data->call(info.thread_id, info.object_id, f);
 }
 
 template <typename Obj, typename... Args, typename... FnArgs>
 uint64_t Event::c(CallResponse(Obj::*fun)(uint64_t, Args...), FnArgs... args) {
-    auto& evs_ty = uring_data_.sub_events.at(type_index(typeid(Obj)));
-    cout << evs_ty.size() << endl;
+    auto& evs_ty = uring_data_->sub_events.at(type_index(typeid(Obj)));
     auto it = find_if_not(evs_ty.begin(), evs_ty.end(), [](auto& ev) {return ev == nullopt;});
     if (it == evs_ty.end())
         throw runtime_error{"No event for call found."};
@@ -768,18 +816,35 @@ void Event::c(int op, void(*liburing)(io_uring_sqe*, Args...), FnArgs... args) {
         liburing(sqe, args...);
     };
 
-    uring_data_.thread_data->call_uring(op, f);
+    local_data_.thread_data->call_uring(op, f);
 }
 
 template <typename Obj>
 void Event::d(size_t idx) {
-    auto opt = uring_data_.sub_events.at(type_index(typeid(Obj))).at(idx);
+    auto opt = uring_data_->sub_events.at(type_index(typeid(Obj))).at(idx);
     EventInfo& ev = opt.value();
 
-    uring_data_.thread_data->del(ev.thread_id, ev.object_id);
-    uring_data_.sub_events[type_index(typeid(Obj))][idx] = nullopt;
+    local_data_.thread_data->del(ev.thread_id, ev.object_id);
+    uring_data_->sub_events[type_index(typeid(Obj))][idx] = nullopt;
+}
+
+void Event::attach(uint64_t id) {
+    local_data_.thread_data->attach(id);
 }
 
 uint64_t Event::timer(__kernel_timespec ts) {
-    return uring_data_.thread_data->timer(ts);
+    return local_data_.thread_data->timer(ts);
+}
+
+void Event::cancel_timer(uint64_t timerid) {
+    local_data_.thread_data->cancel_timer(timerid);
+}
+
+void Event::resolve(uint64_t id, shared_ptr<Event> ptr) {
+    type_index idx = uring_data_->awaiting_resolve.at(id);
+    for (auto& evinfo : uring_data_->sub_events[idx]) {
+        if (evinfo && evinfo.value().object_id == id) {
+            evinfo.value().event = ptr;
+        }
+    }
 }
