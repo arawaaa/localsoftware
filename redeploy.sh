@@ -54,7 +54,6 @@ ssh ls-pi "sudo -S mv /home/rapi/localsoftware /usr/local/bin/localsoftware && \
 sudo mkdir -p /srv/landing && \
 sudo mkdir -p /srv/bwith && \
 sudo mkdir -p /srv/rp && \
-sudo rm -rf /etc/wlan_monitor && \
 sudo mkdir -p /etc/localsoftware && \
 sudo rm -rf /srv/landing/* && \
 sudo rm -rf /srv/bwith/* && \
@@ -64,7 +63,6 @@ sudo rm -rf /home/rapi/client && \
 sudo mv /home/rapi/monitoringindex.html /srv/bwith/index.html && \
 sudo mv /home/rapi/proxyindex.html /srv/rp/index.html && \
 sudo mv /home/rapi/localsoftware.service /etc/systemd/system/localsoftware.service && \
-sudo rm /etc/systemd/system/wlan_monitor.service && \
 sudo mv /home/rapi/proxy.config /etc/localsoftware/proxy.config && \
 sudo mkdir -p /etc/wireguard && \
 sudo mv /home/rapi/wg0.conf /etc/wireguard/wg0.conf && \
@@ -76,7 +74,6 @@ sudo chmod +x /etc/NetworkManager/dispatcher.d/98-update-vpn && \
 sudo chmod +x /etc/NetworkManager/dispatcher.d/99-update-dnsmasq-relay && \
 sudo mkdir -p /var/log/localsoftware && echo rapi | sudo -S chown rapi:rapi /var/log/localsoftware && \
 sudo rm -rf /var/log/wlan_monitor && \
-sudo rm /usr/local/bin/wlan_monitor && \
 sudo setcap 'cap_net_bind_service=+ep' /usr/local/bin/localsoftware && \
 sudo systemctl daemon-reload && \
 sudo systemctl restart localsoftware.service"

@@ -145,9 +145,12 @@ struct EventData {
 
 struct Timer {
     uint64_t timer_id;
+    uint64_t obj_id;
+    uint64_t proc_id;
 };
 
 struct TimerUpdate {
+    uint64_t timer_id;
     bool remove;
 };
 

@@ -90,6 +90,8 @@ public:
                 indices[taskid] = idx;
             }
             // Re-arm immediately
+            client_addr_len_ = sizeof(sockaddr_in);
+            client_addr6_len_ = sizeof(sockaddr_in6);
             queue_accept(uri_res.op);
         }
         return nullopt;
@@ -108,9 +110,9 @@ private:
 
     uint64_t taskid_;
     struct sockaddr_in client_addr_{};
-    socklen_t client_addr_len_;
+    socklen_t client_addr_len_ = sizeof(sockaddr_in);
     struct sockaddr_in6 client_addr6_{};
-    socklen_t client_addr6_len_;
+    socklen_t client_addr6_len_ = sizeof(sockaddr_in6);
     bool use_tls_;
     HTTPManager http_manager_;
     unordered_map<uint64_t, int> indices;

@@ -49,6 +49,9 @@ public:
      */
     explicit Event(vector<shared_ptr<File>> file) : files_(file) {}
 
+    Event(Event&) = delete;
+    Event operator=(Event&) = delete;
+
     virtual void construct_with_global() = 0;
 
     Event() {}
@@ -129,4 +132,4 @@ protected:
 
 inline Event::~Event() = default;
 
-#include "io_uring_manager.cpp"
+#include "thread_data.cpp"

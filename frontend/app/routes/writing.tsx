@@ -2,12 +2,6 @@ import { Container, Typography, Grid, Card, CardContent, Button } from '@mui/mat
 
 const writings = [
   {
-    title: "On Wet T-Shirt Contests",
-    description: "What explains wet t-shirt contests and how do similar events relate to the concept of cybernetics, wireheading? How do people voluntarily perform in such contests?",
-    link: "/WetT-Shirt.pdf",
-    date: "March 31 2026"
-  },
-  {
     title: "Knowing the Ultimate Form of Reality",
     description: "What is the ultimate form of reality, and what are the obstacles to understanding it? Why we may live in a quantum multiverse according to the Schrodinger's equation. Being thankful for the miracle of our existence.",
     link: "/TrueNature.pdf",

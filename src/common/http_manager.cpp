@@ -132,7 +132,7 @@ public:
             }
         }
 
-        // try {
+        try {
             // Resolve symlinks and normalize
             fs::path canonical_path = assure_path(target);
                 
@@ -147,11 +147,11 @@ public:
                 auto headers = get_response_headers(req);
                 headers.emplace_back(http::field::content_type, get_mime_type(canonical_path));
                 return prepare_response(headers, http::status::ok, std::move(content));;
-            }/*
+            }
         } catch (const exception& e) {
             // File not found or other filesystem error
             return error_response(req, http::status::not_found, "Not Found");
-        }*/
+        }
 
         return error_response(req, http::status::not_found, "Not Found");
     }

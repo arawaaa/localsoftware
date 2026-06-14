@@ -15,32 +15,52 @@
 #define MAXUFRAMELENGTH (size_t)(16384 - 1024) // little bit of margin
 
 using namespace std;
-/**
- * @brief Base implementation for HTTP socket reading using Boost.Beast parsers.
- */
+
+// Encapsulation for correct copy/move semantics
+class SSLCtx {
+    SSL* ssl_ = nullptr;
+public:
+    SSLCtx() {
+        if ((ssl_ = SSL_new(AsyncHandler::self().get_tls_ctx())) == nullptr) {
+            throw runtime_error{"Failed to create ssl object"};
+        }
+    }
+
+    SSLCtx(SSLCtx&) = delete;
+
+    SSLCtx(SSLCtx&& other) {
+        ssl_ = other.ssl_;
+        other.ssl_ = nullptr;
+    }
+
+    SSLCtx& operator=(SSLCtx&& other) {
+        ssl_ = other.ssl_;
+        other.ssl_ = nullptr;
+        return *this;
+    }
+
+    SSL* operator()() {
+        return ssl_;
+    }
+
+    ~SSLCtx() {
+        SSL_free(ssl_);
+    }
+};
+
 class InetSocketTLSEvent : public Event {
 public:
     InetSocketTLSEvent(vector<shared_ptr<File>> file, bool server)
         : Event(file), server_(server)
     {
-        if ((ssl_ = SSL_new(AsyncHandler::self().get_tls_ctx())) == NULL) {
-            throw runtime_error{"Failed to create ssl object"};
-        }
-
         readbuf_ = BIO_new(BIO_s_mem());
         writebuf_ = BIO_new(BIO_s_mem());
-        SSL_set_bio(ssl_, readbuf_, writebuf_);
+        SSL_set_bio(ssl_(), readbuf_, writebuf_);
         state_ = TLSState::WaitHello;
     }
 
     void construct_with_global() override {
         i<InetSocketReadWriteEventBytes>(files_);
-    }
-
-    virtual ~InetSocketTLSEvent() {
-        if (ssl_) {
-            SSL_free(ssl_);
-        }
     }
 
     CallResponse read(uint64_t id, char* buf, size_t len, bool read_all = true) {
@@ -108,7 +128,7 @@ protected:
         Failed
     };
 
-    SSL* ssl_;
+    SSLCtx ssl_;
     BIO *writebuf_, *readbuf_;
     // The write function will take care of the entire buffer
     size_t e_writelen_;
@@ -116,14 +136,14 @@ protected:
     TLSState state_;
 
     optional<pair<bool, int>> handle_handshake() {
-        int ec = server_ ? SSL_accept(ssl_) : SSL_connect(ssl_);
-        if (SSL_get_error(ssl_, ec) == SSL_ERROR_WANT_READ) {
+        int ec = server_ ? SSL_accept(ssl_()) : SSL_connect(ssl_());
+        if (SSL_get_error(ssl_(), ec) == SSL_ERROR_WANT_READ) {
             if (BIO_ctrl_pending(writebuf_)) {
                 arm_write();
             } else {
                 arm_read();
             }
-        } else if (SSL_get_error(ssl_, ec) != SSL_ERROR_NONE) {
+        } else if (SSL_get_error(ssl_(), ec) != SSL_ERROR_NONE) {
             ERR_print_errors_fp(stderr);
             state_ = TLSState::Failed;
             return pair{true, -1};
@@ -141,11 +161,11 @@ protected:
 
         if (state_ == TLSState::Full) { do {
             size_t readbytes = 0;
-            int ret = SSL_read_ex(ssl_, u_read_ + u_read_p_, u_readlen_ - u_read_p_, &readbytes);
+            int ret = SSL_read_ex(ssl_(), u_read_ + u_read_p_, u_readlen_ - u_read_p_, &readbytes);
             u_read_p_ += readbytes;
 
             // If bytes are read, it will not have an error
-            switch (SSL_get_error(ssl_, ret)) {
+            switch (SSL_get_error(ssl_(), ret)) {
                 case SSL_ERROR_WANT_READ:
                     if (BIO_ctrl_pending(writebuf_)) {
                         arm_write();
@@ -180,10 +200,10 @@ protected:
 
         if (state_ == TLSState::Full) {
             size_t numread = 0;
-            int ret = SSL_write_ex(ssl_, u_write_ + u_write_p_, min(u_writelen_ - u_write_p_, MAXUFRAMELENGTH), &numread);
+            int ret = SSL_write_ex(ssl_(), u_write_ + u_write_p_, min(u_writelen_ - u_write_p_, MAXUFRAMELENGTH), &numread);
             u_write_p_ += numread;
 
-            switch (SSL_get_error(ssl_, ret)) {
+            switch (SSL_get_error(ssl_(), ret)) {
                 case SSL_ERROR_WANT_READ:
                     if (BIO_ctrl_pending(writebuf_)) {
                         arm_write();

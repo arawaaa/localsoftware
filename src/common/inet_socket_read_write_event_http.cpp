@@ -34,9 +34,6 @@ public:
             i<InetSocketReadWriteEventBytes>(files_);
     }
 
-    virtual ~InetSocketReadWriteEventHTTP() {
-    }
-
     /**
      * @brief Initiates or restarts the HTTP reading process.
      * Reassigns the parser for a new request and processes any leftover data.
@@ -135,7 +132,7 @@ protected:
             arm_write();
             return nullopt;
         }
-        return pair{false, -1};
+        return pair{false, 1};
     }
 
     void arm_read() {
