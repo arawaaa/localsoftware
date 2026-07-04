@@ -44,8 +44,8 @@ public:
     void start() {
         vector<thread> threads;
         for (size_t i = 0; i < per_thread_data.size(); i++) {
-            private_per_thread_data.emplace_back(PrivatePerThread { ThreadData(per_thread_data, blocks, i)});
-            threads.emplace_back(&ThreadData::run, &private_per_thread_data[i].dat);
+            private_per_thread_data.emplace_back(ThreadData(per_thread_data, blocks, i));
+            threads.emplace_back(&ThreadData::run, &private_per_thread_data[i]);
         }
         for (auto &t : threads) {
             t.join();
@@ -99,7 +99,11 @@ private:
         return r_obj_id_curr++;
     }
 
-    AsyncHandler(int ts): per_thread_data(ts) {
+    AsyncHandler(int ts) : per_thread_data(ts) {
+        for (int i = 0; i < ts; i++) {
+            private_per_thread_data.emplace_back(per_thread_data, blocks, i);
+        }
+
         tls_ctx_ = SSL_CTX_new(TLS_server_method());
         if (tls_ctx_ == NULL) {
             throw runtime_error{"Unable to create libssl context"};
@@ -149,10 +153,8 @@ private:
      */
     mutex all_halt;
     vector<PerThread> per_thread_data;
-    struct PrivatePerThread {
-        ThreadData dat;
-    };
-    vector<PrivatePerThread> private_per_thread_data;
+
+    vector<ThreadData> private_per_thread_data;
 
     map<type_index, vector<shared_ptr<Event>>> root_events_;
 };

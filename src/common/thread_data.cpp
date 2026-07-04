@@ -4,6 +4,7 @@
 #include <iostream>
 #include <liburing.h>
 #include <limits>
+#include <memory>
 
 #include "defs.cpp"
 #include "async_thread_shared.cpp"
@@ -35,158 +36,10 @@ class ThreadData {
     uint64_t proc_id_base, proc_id_curr; // Upper bound of block is id_base + 1000
     uint64_t obj_id_base, obj_id_curr;
     uint64_t tim_id_base, tim_id_curr;
-    uint64_t source_object, source_proc;
     bool o_init = false, p_init = false, t_init = false;
-
-    // thread, object, procedure
-    list<tuple<int, uint64_t, uint64_t, FunctionCall::Type>> procedure_calls;
-    list<tuple<int, uint64_t>> deleted_ids;
-    list<tuple<int, uint64_t, ConstructorCall::Type, shared_ptr<any>>> new_objs;
-    list<tuple<int, function<void(io_uring_sqe*)>>> pending_uring;
-    list<tuple<uint64_t, __kernel_timespec>> pending_timers;
 
     vector<PerThread>& per_thread_data;
     IdBlocks& blocks;
-
-    class Context {
-        ThreadData& data;
-        bool cancel = false;
-
-    public:
-        Context(ThreadData& data, uint64_t object_id, uint64_t proc_id) : data(data)
-        {
-            data.source_object = object_id;
-            data.source_proc = proc_id;
-            cancel = false;
-        }
-
-        void set_cancel(bool val) {
-            cancel = val;
-        }
-
-        ~Context() {
-            for (auto [thread, obj, f, ptr] : data.new_objs) {
-                data.obj_info[data.source_object].children[obj] = {};
-
-                ConstructorCall callinfo {
-                    .constructor = f,
-                    .ci = CallerInfo {
-                        .thread_id = data.thread,
-                        .obj_id = data.source_object,
-                        .proc_id = data.source_proc
-                    },
-                    .ti = TargetInfo {
-                        .obj_id = obj,
-                        .proc_id = numeric_limits<uint64_t>::max()
-                    },
-                    .uring_data = ptr
-                };
-
-                data.per_thread_data[thread].q.push(callinfo);
-            }
-
-            if (!cancel) {
-                for (auto [thread, obj, proc, f] : data.procedure_calls) {
-                    auto& info = data.obj_info[data.source_object].children[obj];
-                    info.thread = thread;
-                    info.procedures.emplace(proc);
-
-                    FunctionCall callinfo = {
-                        .call = f,
-                        .ci = CallerInfo {
-                            .thread_id = data.thread,
-                            .obj_id = data.source_object,
-                            .proc_id = data.source_proc
-                        },
-                        .ti = TargetInfo {
-                            .obj_id = obj,
-                            .proc_id = proc
-                        }
-                    };
-
-                    data.per_thread_data[thread].q.push(callinfo);
-                }
-
-                for (auto& [op, f] : data.pending_uring) {
-                    io_uring_sqe* sqe = io_uring_get_sqe(&data.ring);
-                    if (sqe) {
-                        f(sqe);
-                        IoUringAttached* attached = new IoUringAttached;
-                        attached->data.emplace<EventData>(EventData{op, data.source_object, data.source_proc});
-                        io_uring_sqe_set_data(sqe, attached);
-                    }
-                }
-
-                for (auto [id, ts] : data.pending_timers) {
-                    if (data.timers.contains(id)) {
-                        bool zeroed = ts.tv_nsec == 0 && ts.tv_sec == 0;
-                        io_uring_sqe* sqe = io_uring_get_sqe(&data.ring);
-                        IoUringAttached* attached = new IoUringAttached;
-                        io_uring_sqe_set_data(sqe, attached);
-                        if (zeroed) {
-                            attached->data.emplace<TimerUpdate>(
-                                TimerUpdate {
-                                    .timer_id = id,
-                                    .remove = true
-                                }
-                            );
-                            io_uring_prep_timeout_remove(sqe, (__u64)data.timers[id].ptr, 0);
-                        } else {
-                            *data.timers[id].ts = ts;
-                            attached->data.emplace<TimerUpdate>(
-                                TimerUpdate {
-                                    .timer_id = id,
-                                    .remove = false
-                                }
-                            );
-                            io_uring_prep_timeout_update(sqe, data.timers[id].ts.get(), (__u64)data.timers[id].ptr, 0);
-                        }
-                    } else {
-                        io_uring_sqe* sqe = io_uring_get_sqe(&data.ring);
-                        IoUringAttached* attached = new IoUringAttached;
-                        data.timers[id] = {
-                            .ptr = attached,
-                            .obj_id = data.source_object,
-                            .ts = make_unique<__kernel_timespec>(ts)
-                        };
-                        attached->data.emplace<Timer>(
-                            Timer {
-                                .timer_id = id,
-                                .obj_id = data.source_object,
-                                .proc_id = data.source_proc
-                            }
-                        );
-
-                        io_uring_prep_timeout(sqe, data.timers[id].ts.get(), 0, 0);
-                        io_uring_sqe_set_data(sqe, attached);
-                    }
-                }
-            }
-
-            for (auto [tid, deleted_id] : data.deleted_ids) {
-                data.per_thread_data[tid].q.push(
-                    Delete {
-                        .ci = CallerInfo {
-                            .thread_id = data.thread,
-                            .obj_id = data.source_object,
-                            .proc_id = data.source_proc
-                        },
-                        .ti = TargetInfo {
-                            .obj_id = deleted_id,
-                            .proc_id = numeric_limits<uint64_t>::max()
-                        }
-                    }
-                );
-                data.obj_info[data.source_object].children.erase(deleted_id);
-            }
-
-            data.procedure_calls.clear();
-            data.pending_uring.clear();
-            data.pending_timers.clear();
-            data.deleted_ids.clear();
-            data.new_objs.clear();
-        }
-    };
 
 public:
     ThreadData(vector<PerThread>& data, IdBlocks& blocks, int thread) :
@@ -200,14 +53,6 @@ public:
     }
 
     void function_call(CallMap& proc_to_dat, ObjectMap& obj_info, FunctionCall& func, int tid);
-
-    Context begin_recording(uint64_t obj_id, uint64_t proc_id = numeric_limits<uint64_t>::max()) {
-        return Context(*this, obj_id, proc_id);
-    }
-
-    void remove_child(uint64_t object_id, int target_tid) {
-        deleted_ids.emplace_back(target_tid, object_id);
-    }
 
     void run() {
         __kernel_timespec ts ={
@@ -241,104 +86,6 @@ public:
 
             for (int i = 0; i < 10 && (handle_dequeue() || (q_nonempty = false)); i++);
         }
-    }
-
-    /**
-     * @returns Thread ID of object, object id
-     */
-    tuple<int, uint64_t> init(ConstructorCall::Type f) {
-        auto id = get_obj_id();
-
-        // Attempt to stay on the same thread, with a lower threshold
-        // due to the anticipation of having multiple function calls.
-        {
-            lock_guard lu(per_thread_data[thread].stats);
-            if (per_thread_data[thread].load_avg < 0.8) {
-                new_objs.emplace_back(thread, id, f, shared_ptr<any>());
-                return {thread, id};
-            }
-        }
-
-        int min_thread, min_thread_0 = -1; float min_amt = 1.0;
-
-        // Need constant size for iteration
-        // lock_guard vec(instance.size_dec);
-        for (size_t i = 0; i < per_thread_data.size(); i++) {
-            lock_guard t(per_thread_data[i].stats);
-
-            // Don't push to empty thread unless all working threads have too much utilization
-            if (per_thread_data[i].load_avg < min_amt) {
-                if (per_thread_data[i].load_avg > 0.0) {
-                    min_amt = per_thread_data[i].load_avg;
-                    min_thread = i;
-                } else {
-                    min_thread_0 = i;
-                }
-            }
-        }
-
-        if (min_amt > 0.2 && min_thread_0 != -1) {
-            new_objs.emplace_back(min_thread_0, id, f, shared_ptr<any>());
-            return {min_thread_0, id};
-        } else {
-            new_objs.emplace_back(min_thread, id, f, shared_ptr<any>());
-            return {min_thread, id};
-        }
-    }
-
-    void call_uring(int op, function<void(io_uring_sqe*)> f) {
-        pending_uring.emplace_back(op, f);
-    }
-
-    uint64_t call(unordered_set<int> target_tid, uint64_t target_object, FunctionCall::Type f) {
-        // Locally get the id by preallocation of a block per thread
-        auto id = get_proc_id();
-
-        // Usually child events will be on the same thread, so this will minimize thrashing
-        // If a child event is on multiple threads, select the one with the lowest load average
-        // TODO Auto-scaling child events if they allow multithreading
-        if (target_tid.contains(thread)) {
-            // Try to keep ourselves on the core-local cache line
-            lock_guard lu(per_thread_data[thread].stats);
-            if (per_thread_data[thread].load_avg < 0.9) {
-                procedure_calls.emplace_back(thread, target_object, id, f);
-            }
-        } else {
-            int min_thread; float min_amt = 1.0;
-            for (auto tid : target_tid) {
-                lock_guard lu(per_thread_data[tid].stats);
-                if (per_thread_data[tid].load_avg < min_amt) {
-                    min_amt = per_thread_data[tid].load_avg;
-                    min_thread = tid;
-                }
-            }
-            procedure_calls.emplace_back(min_thread, target_object, id, f);
-        }
-
-        return id;
-    }
-
-    void del(unordered_set<int> target_tid, uint64_t obj_id) {
-        for (auto tid : target_tid) {
-            deleted_ids.emplace_back(tid, obj_id);
-        }
-    }
-
-    uint64_t timer(__kernel_timespec ts) {
-        auto id = get_tim_id();
-
-        pending_timers.emplace_back(id, ts);
-
-        return id;
-    }
-
-    void cancel_timer(uint64_t timerid) {
-        if (!timers.contains(timerid)) return;
-        pending_timers.emplace_back(timerid, __kernel_timespec{0, 0});
-    }
-
-    void attach(uint64_t id) {
-        also_notify[id].emplace_back(source_object, source_proc);
     }
 
     uint64_t get_proc_id() {
@@ -444,9 +191,6 @@ private:
                 per_thread_data[thread].q.push(cons);
                 per_thread_data[thread].q.push(fun);
             },
-            [&] (ConstructResponse& cs) {
-                obj_info[cs.target].ptr->resolve(cs.constructed, cs.ev);
-            },
             [] (monostate) {
 
             }
@@ -525,7 +269,6 @@ private:
         // A secondary function construct_with_global() is allowed to
         // make calls, etc
 
-        auto ctx = begin_recording(construct.ti.obj_id);
         obj_info.emplace(construct.ti.obj_id, ObjectDataThreaded {
             .ptr = construct.constructor(),
             .assoc_procs = {},
@@ -541,26 +284,19 @@ private:
         obj_info[construct.ti.obj_id].ptr->local_data_.thread_data = this;
         obj_info[construct.ti.obj_id].ptr->construct_with_global();
 
-        if (construct.ci.thread_id >= 0
-            && construct.ci.obj_id != numeric_limits<uint64_t>::max()) {
-            auto resp = ConstructResponse {
-                .target = construct.ci.obj_id,
-                .constructed = construct.ti.obj_id,
-                .ev = obj_info[construct.ti.obj_id].ptr
-            };
-            per_thread_data[construct.ci.thread_id].q.push(resp);
-        }
+        process_queued(obj_info[construct.ti.obj_id].ptr, construct.ti);
     }
 
     void function_call(FunctionCall& func) {
         obj_info[func.ti.obj_id].ptr->local_data_.thread_data = this;
-        auto ctx = begin_recording(func.ti.obj_id, func.ti.proc_id);
 
         proc_to_dat[func.ti.proc_id].assoc_obj = func.ti.obj_id;
         proc_to_dat[func.ti.proc_id].back_notify = {func.ci.thread_id, func.ci.obj_id, func.ci.proc_id};
         proc_to_dat[func.ti.proc_id].status = CallStatus::Running;
 
         CallResponse resp = func.call(obj_info[func.ti.obj_id].ptr, func.ti.proc_id);
+
+        process_queued(obj_info[func.ti.obj_id].ptr, func.ti);
 
         if (static_cast<uint64_t>(func.ci.thread_id) < per_thread_data.size()) {
             per_thread_data[func.ci.thread_id].q.push(
@@ -623,10 +359,9 @@ private:
 
         obj_info[on_data.ti.obj_id].ptr->local_data_.thread_data = this;
 
-        auto ctx = begin_recording(
-            on_data.ti.obj_id, on_data.ti.proc_id);
-
+        obj_info[on_data.ti.obj_id].ptr->map_event_data(on_data.data);
         auto res = obj_info[on_data.ti.obj_id].ptr->on_yield(on_data.data);
+        process_queued(obj_info[on_data.ti.obj_id].ptr, on_data.ti);
         if (res) {
             pair<bool, int> yielded = res.value();
 
@@ -664,83 +399,224 @@ private:
             }
         }
     }
-};
 
-template <typename Obj, typename... Args>
-size_t Event::i(Args... args) {
-    auto f = [args...] mutable {
-        return make_shared<Obj>(std::forward<Args>(args)...);
-    };
+    int find_target_thread(unordered_set<int> threads = {}) {
+         // Attempt to stay on the same thread, with a lower threshold
+        // due to the anticipation of having multiple function calls.
+        if (threads.empty() || threads.contains(thread)){
+            lock_guard lu(per_thread_data[thread].stats);
+            if (per_thread_data[thread].load_avg < 0.8) {
+                return thread;
+            }
+        }
 
-    auto [thread, id] = local_data_.thread_data->init(f);
-    auto& vec_evs = uring_data_->sub_events[type_index(typeid(Obj))];
+        int min_thread, min_thread_0 = -1, run_thread = -1; float min_amt = 1.0;
 
-    uring_data_->awaiting_resolve.emplace(id, type_index(typeid(Obj)));
-    auto it = find(vec_evs.begin(), vec_evs.end(), nullopt);
-    if (it == vec_evs.end()) {
-        vec_evs.emplace_back(EventInfo {id, {thread}, weak_ptr<Event>()});
-        return vec_evs.size() - 1;
-    } else {
-        it->emplace(EventInfo {id, {thread}, weak_ptr<Event>()});
-        return it - vec_evs.begin();
+        // Need constant size for iteration
+        // lock_guard vec(instance.size_dec);
+        for (size_t i = 0; i < per_thread_data.size(); i++) {
+            if (!threads.empty() && !threads.contains(i)) continue;
+            lock_guard t(per_thread_data[i].stats);
+
+            // Don't push to empty thread unless all working threads have too much utilization
+            if (per_thread_data[i].load_avg < min_amt) {
+                if (per_thread_data[i].load_avg > 0.02) {
+                    min_amt = per_thread_data[i].load_avg;
+                    min_thread = i;
+                } else {
+                    min_thread_0 = i;
+                }
+            }
+        }
+
+        if (min_amt > 0.2 && min_thread_0 != -1) {
+            run_thread = min_thread_0;
+        } else {
+            run_thread = min_thread;
+        }
+
+        return run_thread;
     }
-}
 
-template <typename Obj, typename... Args, typename... FnArgs>
-uint64_t Event::c(size_t idx, CallResponse(Obj::*fun)(uint64_t, Args...), FnArgs... args) {
-    auto f = [args..., fun] (shared_ptr<Event> obj, uint64_t id) mutable -> CallResponse {
-        return (static_pointer_cast<Obj>(obj).get()->*fun)(id, std::forward<Args>(args)...);
-    };
+    void process_queued(shared_ptr<Event> ptr, TargetInfo ti) {
+        process_queued_construct(ptr, ti);
+        process_queued_function(ptr, ti);
+        process_queued_uring(ptr, ti);
+        process_queued_timers(ptr, ti);
+        process_queued_delete(ptr, ti);
+        process_queued_attach(ptr, ti);
+        ptr->clear();
+    }
 
-    EventInfo& info = uring_data_->sub_events.at(type_index(typeid(Obj))).at(idx).value();
-    return local_data_.thread_data->call(info.thread_id, info.object_id, f);
-}
+    void process_queued_construct(shared_ptr<Event> ptr, TargetInfo ti) {
+        list<EventQueuedConstruct>& constructs = ptr->get_queued<EventQueuedConstruct>();
+        for (auto& construct : constructs) {
+            auto& opt_ev = ptr->get_evinfo(construct.idx, construct.vidx);
+            if (!opt_ev)
+                continue;
 
-template <typename Obj, typename... Args, typename... FnArgs>
-uint64_t Event::c(CallResponse(Obj::*fun)(uint64_t, Args...), FnArgs... args) {
-    auto& evs_ty = uring_data_->sub_events.at(type_index(typeid(Obj)));
-    auto it = find_if_not(evs_ty.begin(), evs_ty.end(), [](auto& ev) {return ev == nullopt;});
-    if (it == evs_ty.end())
-        throw runtime_error{"No event for call found."};
+            int run_thread = find_target_thread();
+            auto new_obj_id = get_obj_id();
+            Event::EventInfo& evinfo = opt_ev.value();
+            evinfo.locator = Event::EventInfo::Locator {
+                .object_id = new_obj_id,
+                .thread_id = {run_thread}
+            };
 
-    return c(it - evs_ty.begin(), fun, args...);
-}
+            obj_info[ti.obj_id].children[new_obj_id] = {};
 
-template <typename... Args, typename... FnArgs>
-void Event::c(int op, void(*liburing)(io_uring_sqe*, Args...), FnArgs... args) {
-    auto f = [args..., liburing](io_uring_sqe* sqe) mutable {
-        liburing(sqe, args...);
-    };
+            ConstructorCall callinfo {
+                .constructor = construct.fun,
+                .ci = CallerInfo {
+                    .thread_id = run_thread,
+                    .obj_id = ti.obj_id,
+                    .proc_id = ti.proc_id
+                },
+                .ti = TargetInfo {
+                    .obj_id = new_obj_id,
+                    .proc_id = numeric_limits<uint64_t>::max()
+                },
+                .uring_data = reinterpret_pointer_cast<any>(shared_ptr<Event>())
+            };
 
-    local_data_.thread_data->call_uring(op, f);
-}
-
-template <typename Obj>
-void Event::d(size_t idx) {
-    auto opt = uring_data_->sub_events.at(type_index(typeid(Obj))).at(idx);
-    EventInfo& ev = opt.value();
-
-    local_data_.thread_data->del(ev.thread_id, ev.object_id);
-    uring_data_->sub_events[type_index(typeid(Obj))][idx] = nullopt;
-}
-
-void Event::attach(uint64_t id) {
-    local_data_.thread_data->attach(id);
-}
-
-uint64_t Event::timer(__kernel_timespec ts) {
-    return local_data_.thread_data->timer(ts);
-}
-
-void Event::cancel_timer(uint64_t timerid) {
-    local_data_.thread_data->cancel_timer(timerid);
-}
-
-void Event::resolve(uint64_t id, shared_ptr<Event> ptr) {
-    type_index idx = uring_data_->awaiting_resolve.at(id);
-    for (auto& evinfo : uring_data_->sub_events[idx]) {
-        if (evinfo && evinfo.value().object_id == id) {
-            evinfo.value().event = ptr;
+            per_thread_data[thread].q.push(callinfo);
         }
     }
-}
+
+    void process_queued_function(shared_ptr<Event> ptr, TargetInfo ti) {
+        auto& funcs = ptr->get_queued<EventQueuedFunction>();
+
+        for (auto& func : funcs) {
+            auto& evinfo_opt = ptr->get_evinfo(func.idx, func.vidx);
+
+            if (!evinfo_opt) continue;
+
+            Event::EventInfo& evinfo = evinfo_opt.value();
+
+            if (!evinfo.locator) {
+                throw invalid_argument{"Object was not initialized"};
+            }
+
+            Event::EventInfo::Locator& locator = evinfo.locator.value();
+
+            int target_thread = find_target_thread(locator.thread_id);
+
+            uint64_t proc_id = get_proc_id();
+            auto& info = obj_info[ti.obj_id].children[locator.object_id];
+            info.thread = thread;
+            info.procedures.emplace(proc_id);
+
+            FunctionCall callinfo = {
+                .call = func.fun,
+                .ci = CallerInfo {
+                    .thread_id = thread,
+                    .obj_id = ti.obj_id,
+                    .proc_id = ti.proc_id
+                },
+                .ti = TargetInfo {
+                    .obj_id = locator.object_id,
+                    .proc_id = proc_id
+                }
+            };
+
+            ptr->global_to_local(proc_id, func.local_id);
+
+            per_thread_data[target_thread].q.push(callinfo);
+        }
+    }
+
+    void process_queued_uring(shared_ptr<Event> ptr, TargetInfo ti) {
+        auto& urings = ptr->get_queued<EventQueuedUring>();
+
+        for (auto& uring : urings) {
+            io_uring_sqe* sqe = io_uring_get_sqe(&ring);
+            if (sqe) {
+                uring.fun(sqe);
+                IoUringAttached* attached = new IoUringAttached;
+                attached->data.emplace<EventData>(EventData{uring.op, ti.obj_id, ti.proc_id});
+                io_uring_sqe_set_data(sqe, attached);
+            }
+        }
+    }
+
+    void process_queued_timers(shared_ptr<Event> ptr, TargetInfo ti) {
+        auto& timersl = ptr->get_queued<EventQueuedTimer>();
+
+        for (auto& timer : timersl) {
+            if (timers.contains(ptr->translate_tim_local(timer.local_id))) {
+                bool zeroed = timer.time.tv_nsec == 0 && timer.time.tv_sec == 0;
+                io_uring_sqe* sqe = io_uring_get_sqe(&ring);
+                IoUringAttached* attached = new IoUringAttached;
+                io_uring_sqe_set_data(sqe, attached);
+                if (zeroed) {
+                    attached->data.emplace<TimerUpdate>(
+                        TimerUpdate {
+                            .timer_id = ptr->translate_tim_local(timer.local_id),
+                            .remove = true
+                        }
+                    );
+                    io_uring_prep_timeout_remove(sqe, (__u64)timers[ptr->translate_tim_local(timer.local_id)].ptr, 0);
+                } else {
+                    *timers[ptr->translate_tim_local(timer.local_id)].ts = timer.time;
+                    attached->data.emplace<TimerUpdate>(
+                        TimerUpdate {
+                            .timer_id = ptr->translate_tim_local(timer.local_id),
+                            .remove = false
+                        }
+                    );
+                    io_uring_prep_timeout_update(sqe, timers[ptr->translate_tim_local(timer.local_id)].ts.get(), (__u64)timers[ptr->translate_tim_local(timer.local_id)].ptr, 0);
+                }
+            } else {
+                uint64_t id = get_tim_id();
+                ptr->global_to_local_tim(id, timer.local_id);
+                io_uring_sqe* sqe = io_uring_get_sqe(&ring);
+                IoUringAttached* attached = new IoUringAttached;
+                timers[id] = {
+                    .ptr = attached,
+                    .obj_id = ti.obj_id,
+                    .ts = make_unique<__kernel_timespec>(timer.time)
+                };
+                attached->data.emplace<Timer>(
+                    Timer {
+                        .timer_id = id,
+                        .obj_id = ti.obj_id,
+                        .proc_id = ti.proc_id
+                    }
+                );
+
+                io_uring_prep_timeout(sqe, timers[id].ts.get(), 0, 0);
+                io_uring_sqe_set_data(sqe, attached);
+            }
+        }
+    }
+
+    void process_queued_delete(shared_ptr<Event> ptr, TargetInfo ti) {
+        auto& deleted = ptr->get_queued<EventQueuedDelete>();
+        for (auto& deleted_s : deleted) {
+            for (int id : deleted_s.thread) {
+                per_thread_data[id].q.push(
+                    Delete {
+                        .ci = CallerInfo {
+                            .thread_id = thread,
+                            .obj_id = ti.obj_id,
+                            .proc_id = ti.proc_id
+                        },
+                        .ti = TargetInfo {
+                            .obj_id = deleted_s.obj_id,
+                            .proc_id = numeric_limits<uint64_t>::max()
+                        }
+                    }
+                );
+            }
+            obj_info[ti.obj_id].children.erase(deleted_s.obj_id);
+        }
+    }
+
+    void process_queued_attach(shared_ptr<Event> ptr, TargetInfo ti) {
+          auto& attaches = ptr->get_queued<EventQueuedAttach>();
+
+          for (auto& attach : attaches) {
+              also_notify[ptr->translate_proc_local(attach.target_local_id)].emplace_back(ti.obj_id, ti.proc_id);
+        }
+    }
+};

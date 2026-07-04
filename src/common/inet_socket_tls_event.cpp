@@ -1,5 +1,6 @@
 #pragma once
 
+#include <limits>
 #include <memory>
 
 #include <openssl/bio.h>
@@ -74,6 +75,9 @@ public:
     }
 
     CallResponse write(uint64_t id, char* buf, size_t len) {
+        if (u_write_p_ < u_writelen_) {
+            // There is a write already in progress
+        }
         task_write_ = id;
         u_write_ = buf;
         u_writelen_ = len;
@@ -114,12 +118,12 @@ public:
 protected:
     uint64_t task_bytes_read_, task_bytes_write_;
     bool task_bytes_r_fin_ = true, task_bytes_w_fin_ = true;
-    uint64_t task_read_, task_write_;
+    uint64_t task_read_, task_write_, task_write_2_ = numeric_limits<uint64_t>::max();
     bool server_;
 
     bool sticky_read_ = false;
     char* u_read_, *u_write_;
-    size_t u_readlen_, u_writelen_, u_read_p_, u_write_p_;
+    size_t u_readlen_ = 0, u_writelen_ = 0, u_read_p_ = 0, u_write_p_ = 0;
 
     // TLS variables. Buffer procession for recv: recv -> encryptread -> ssl_read -> buffer_ -> parse
     enum TLSState {

@@ -167,7 +167,7 @@ protected:
         size_t consumed = parser_->put(buffer_.data(), ec);
         buffer_.consume(consumed);
 
-        while ((!ec || ec == http::error::need_more) && !parser_->is_done() && buffer_.size()) {
+        while ((!ec || ec == http::error::need_more) && !parser_->is_done() && (consumed && buffer_.size())) {
             consumed = parser_->put(buffer_.data(), ec);
             buffer_.consume(consumed);
         }

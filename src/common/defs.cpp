@@ -18,6 +18,10 @@
 using namespace std;
 
 class Event;
+struct CallResponse;
+
+typedef function<shared_ptr<Event>()> ConstructFunc;
+typedef function<CallResponse(shared_ptr<Event>, uint64_t id)> FunctionFunc;
 
 enum RequestID {
     ID_DEFAULT = 0x1,
@@ -80,16 +84,13 @@ struct TargetInfo {
 };
 
 struct RootStart {
-    typedef function<shared_ptr<Event>()> ConstructType;
-    typedef function<CallResponse(shared_ptr<Event>, uint64_t id)> CallType;
-    ConstructType constructor;
-    CallType init;
+    ConstructFunc constructor;
+    FunctionFunc init;
     TargetInfo ti;
 };
 
 struct ConstructorCall {
-    typedef function<shared_ptr<Event>()> Type;
-    Type constructor;
+    ConstructFunc constructor;
     CallerInfo ci;
     TargetInfo ti;
     // Type erased pointer for shared context container
@@ -97,8 +98,8 @@ struct ConstructorCall {
 };
 
 struct FunctionCall {
-    typedef function<CallResponse(shared_ptr<Event>, uint64_t id)> Type;
-    Type call;
+
+    FunctionFunc call;
     CallerInfo ci;
     TargetInfo ti;
 };
@@ -124,15 +125,6 @@ struct Data {
     CallerInfo ci;
     TargetInfo ti;
     EventType data;
-};
-
-struct ConstructResponse {
-    uint64_t target, constructed;
-    shared_ptr<Event> ev;
-};
-
-struct QueueContainer {
-    oneapi::tbb::concurrent_queue<variant<ConstructorCall, FunctionCall, Delete, Data, RootStart>> a;
 };
 
 // Types passed within a variant to the user data in IoUring calls
@@ -195,17 +187,6 @@ struct CallDataThreaded {
     int return_code;
 };
 
-struct CallData {
-    list<uint64_t> other_ids;
-    CallStatus status;
-    string description;
-    uint32_t op_hint;
-    list<uint64_t> parent_task_id;
-    int return_code;
-    Event* event;
-    uint64_t thread_id;
-};
-
 struct GetDataInfo {
     bool valid;
 };
@@ -214,4 +195,38 @@ struct TimerData {
     IoUringAttached* ptr;
     uint64_t obj_id;
     unique_ptr<__kernel_timespec> ts;
+};
+
+// Event Queued Item Structs
+
+struct EventQueuedConstruct {
+    type_index idx;
+    size_t vidx;
+    ConstructFunc fun;
+};
+
+struct EventQueuedFunction {
+    type_index idx;
+    size_t vidx;
+    uint64_t local_id;
+    FunctionFunc fun;
+};
+
+struct EventQueuedUring {
+    int op;
+    function<void(io_uring_sqe*)> fun;
+};
+
+struct EventQueuedTimer {
+    uint64_t local_id;
+    __kernel_timespec time;
+};
+
+struct EventQueuedDelete {
+    unordered_set<int> thread;
+    uint64_t obj_id;
+};
+
+struct EventQueuedAttach {
+    uint64_t target_local_id;
 };

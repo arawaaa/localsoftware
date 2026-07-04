@@ -17,7 +17,6 @@
 #include <openssl/sha.h>
 
 #include "common/io_uring_manager.cpp"
-#include "test/test.cpp"
 // #include "bandwidth_monitor/accept_event.cpp"
 #include "aio_landing/aio_landing_accepter.cpp"
 // #include "reverse_proxy/reverse_proxy_accept.cpp"
