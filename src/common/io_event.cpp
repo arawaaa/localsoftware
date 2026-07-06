@@ -18,6 +18,7 @@
 #include "async_thread_shared.cpp"
 
 using namespace std;
+extern thread_local shared_ptr<IoUringData> context;
 
 class ThreadData;
 
@@ -28,31 +29,6 @@ class Event {
     template<class... Ts>
     struct overloaded : Ts... { using Ts::operator()...; };
 public:
-    struct EventInfo {
-        struct Locator {
-            uint64_t object_id;
-            unordered_set<int> thread_id;
-        };
-        // Filled in by ThreadData
-        optional<Locator> locator;
-        weak_ptr<Event> event;
-    };
-
-    // In single-thread case, low overhead due to futex
-    // Lock shared when reading, lock unique when writing
-    struct IoUringData {
-        unordered_map<type_index, vector<optional<EventInfo>>> sub_events;
-        map<uint64_t, type_index> awaiting_resolve;
-        uint64_t local_proc_id = 0;
-        uint64_t local_timer_id = 0;
-        // Will get rid of id translation when start using promises
-        map<uint64_t, uint64_t> global_proc_to_local_proc;
-        map<uint64_t, uint64_t> local_proc_to_global_proc;
-        map<uint64_t, uint64_t> global_tim_to_local_tim;
-        map<uint64_t, uint64_t> local_tim_to_global_tim;
-        shared_mutex mut;
-    };
-
     struct LocalData {
         int id;
         ThreadData* thread_data;
@@ -63,14 +39,18 @@ public:
      * For constructors: do not call any delegated class functions. They will not have a context
      * to run within and will not be run!
      */
-    explicit Event(vector<shared_ptr<File>> file) : files_(file) {}
+    explicit Event(vector<shared_ptr<File>> file) : files_(file) {
+        init();
+    }
 
     Event(Event&) = delete;
     Event operator=(Event&) = delete;
 
     virtual void construct_with_global() = 0;
 
-    Event() {}
+    Event() {
+        init();
+    }
 
     virtual ~Event();
 
@@ -288,6 +268,14 @@ protected:
     vector<shared_ptr<File>> files_;
 
 private:
+    void init() {
+        if (context) {
+            uring_data_ = context;
+        } else {
+            uring_data_ = make_shared<IoUringData>();
+        }
+    }
+
     list<EventQueuedConstruct> construct_;
     list<EventQueuedFunction> function_;
     list<EventQueuedUring> uring_;

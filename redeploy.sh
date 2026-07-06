@@ -41,4 +41,4 @@ scp -r localsoftware \
 
 # Deploy and restart
 ssh ls-lp "sudo fish ondevicedeploy.fish"
-ssh ls-lp "cd localsoftware; and git pull"
+ssh ls-lp "cd lsoft; and git pull"

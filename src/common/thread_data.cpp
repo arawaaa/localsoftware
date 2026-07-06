@@ -12,6 +12,8 @@
 
 using namespace std;
 
+thread_local shared_ptr<IoUringData> context;
+
 // Badly designed class; we should record within the event class
 // Causes event implementation methods to be defined in this file
 // polluting it
@@ -269,6 +271,7 @@ private:
         // A secondary function construct_with_global() is allowed to
         // make calls, etc
 
+        context = reinterpret_pointer_cast<IoUringData>(construct.uring_data);
         obj_info.emplace(construct.ti.obj_id, ObjectDataThreaded {
             .ptr = construct.constructor(),
             .assoc_procs = {},
@@ -276,11 +279,6 @@ private:
             .children = {}
         });
 
-        if (construct.uring_data) {
-            obj_info[construct.ti.obj_id].ptr->uring_data_ = reinterpret_pointer_cast<Event::IoUringData>(construct.uring_data);
-        } else {
-            obj_info[construct.ti.obj_id].ptr->uring_data_ = make_shared<Event::IoUringData>();
-        }
         obj_info[construct.ti.obj_id].ptr->local_data_.thread_data = this;
         obj_info[construct.ti.obj_id].ptr->construct_with_global();
 
@@ -457,8 +455,8 @@ private:
 
             int run_thread = find_target_thread();
             auto new_obj_id = get_obj_id();
-            Event::EventInfo& evinfo = opt_ev.value();
-            evinfo.locator = Event::EventInfo::Locator {
+            EventInfo& evinfo = opt_ev.value();
+            evinfo.locator = EventInfo::Locator {
                 .object_id = new_obj_id,
                 .thread_id = {run_thread}
             };
@@ -491,13 +489,13 @@ private:
 
             if (!evinfo_opt) continue;
 
-            Event::EventInfo& evinfo = evinfo_opt.value();
+            EventInfo& evinfo = evinfo_opt.value();
 
             if (!evinfo.locator) {
                 throw invalid_argument{"Object was not initialized"};
             }
 
-            Event::EventInfo::Locator& locator = evinfo.locator.value();
+            EventInfo::Locator& locator = evinfo.locator.value();
 
             int target_thread = find_target_thread(locator.thread_id);
 
