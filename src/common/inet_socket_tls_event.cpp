@@ -17,6 +17,11 @@
 
 using namespace std;
 
+// Ossl callbacks
+
+int osslcb_read(BIO* b, char* dat, size_t len, size_t *written);
+long osslcb_ctrl(BIO *, int cmd, long, void *);
+
 // Encapsulation for correct copy/move semantics
 class SSLCtx {
     SSL* ssl_ = nullptr;
@@ -49,19 +54,27 @@ public:
     }
 };
 
+/* Class for managing TLS connections
+ */
+
 class InetSocketTLSEvent : public Event {
 public:
     InetSocketTLSEvent(vector<shared_ptr<File>> file, bool server)
         : Event(file), server_(server)
     {
-        readbuf_ = BIO_new(BIO_s_mem());
+        i<InetSocketReadWriteEventBytes>(files_);
+        openssl_setup();
+    }
+
+    void openssl_setup() {
+        BIO_METHOD* read_method = BIO_meth_new(BIO_TYPE_NONE, "ReadAsync");
+        BIO_meth_set_read_ex(read_method, &osslcb_read);
+        BIO_meth_set_ctrl(read_method, &osslcb_ctrl);
+        readbuf_ = BIO_new(read_method);
+        BIO_set_data(readbuf_, this);
         writebuf_ = BIO_new(BIO_s_mem());
         SSL_set_bio(ssl_(), readbuf_, writebuf_);
         state_ = TLSState::WaitHello;
-    }
-
-    void construct_with_global() override {
-        i<InetSocketReadWriteEventBytes>(files_);
     }
 
     CallResponse read(uint64_t id, char* buf, size_t len, bool read_all = true) {
@@ -97,7 +110,7 @@ public:
 
         if (res.task_id == task_bytes_read_ && !task_bytes_r_fin_) {
             task_bytes_r_fin_ = true;
-            BIO_write(readbuf_, e_read_, res.return_code);
+            e_read_s_ += res.return_code;
         } else if (res.task_id == task_bytes_write_) {
             task_bytes_w_fin_ = true;
         }
@@ -113,6 +126,10 @@ public:
 
     string get_info() const override {
         return "TLS socket adaptor";
+    }
+
+    pair<size_t&, char*> get_e_read() {
+        return {e_read_s_, e_read_};
     }
 
 protected:
@@ -137,6 +154,7 @@ protected:
     // The write function will take care of the entire buffer
     size_t e_writelen_;
     char e_read_[MAXFRAMELENGTH], e_write_[MAXFRAMELENGTH];
+    size_t e_read_s_ = 0, e_write_s_ = 0;
     TLSState state_;
 
     optional<pair<bool, int>> handle_handshake() {
@@ -182,16 +200,17 @@ protected:
                         // Done, or received initial message only
                         return pair{false, u_read_p_};
                     } else if (!BIO_ctrl_pending(readbuf_)) {
+                        // Do we need this?
                         // Nothing else in the BIO, still incomplete. Continue
                         arm_read();
+                        return nullopt;
                     } // else { repeat }
                     break;
                 default:
-                    // What to do in this case? I think ssl_write will also error out
                     ERR_print_errors_fp(stderr);
                     return pair{true, -1};
             }
-        } while (BIO_ctrl_pending(readbuf_) && (u_readlen_ - u_read_p_) && (sticky_read_ || !u_read_p_));}
+        } while (true);}
 
         return nullopt;
     }
@@ -232,7 +251,7 @@ protected:
 
     void arm_read() {
         if (task_bytes_r_fin_) {
-            uint64_t taskid = c(&InetSocketReadWriteEventBytes::read, e_read_, sizeof(e_read_), false);
+            uint64_t taskid = c(&InetSocketReadWriteEventBytes::read, e_read_, sizeof(e_read_) - e_read_s_, false);
             task_bytes_read_ = taskid;
             task_bytes_r_fin_ = false;
         } else {
@@ -251,3 +270,31 @@ protected:
         }
     }
 };
+
+// Openssl callback implementation
+
+int osslcb_read(BIO* b, char* dat, size_t len, size_t *written) {
+    InetSocketTLSEvent* ev = (InetSocketTLSEvent*) BIO_get_data(b);
+
+    auto [size, ptr] = ev->get_e_read();
+
+    if (!size) {
+        *written = 0;
+        BIO_set_retry_read(b);
+        return 1;
+    }
+
+    size_t towrite = min(size, len);
+    memcpy(dat, ptr, towrite);
+    *written = towrite;
+    size -= towrite;
+    memmove(ptr, ptr + towrite, size);
+    return 1;
+}
+
+long osslcb_ctrl(BIO *, int cmd, long, void *) {
+    if (cmd == BIO_CTRL_FLUSH) {
+        return 1;
+    }
+    return 0;
+}

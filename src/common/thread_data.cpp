@@ -5,6 +5,7 @@
 #include <liburing.h>
 #include <limits>
 #include <memory>
+#include <malloc.h>
 
 #include "defs.cpp"
 #include "async_thread_shared.cpp"
@@ -24,12 +25,13 @@ class ThreadData {
     int thread;
 
     io_uring ring;
-    io_uring_cqe *cqe[128] = {nullptr};
+    io_uring_cqe *cqe = nullptr;
 
     typedef unordered_map<uint64_t, CallDataThreaded> CallMap;
     typedef unordered_map<uint64_t, ObjectDataThreaded> ObjectMap;
     typedef unordered_map<uint64_t, TimerData> TimerMap;
 
+    // TODO clean this up as well when we delete objects
     CallMap proc_to_dat;
     ObjectMap obj_info;
     TimerMap timers;
@@ -76,17 +78,18 @@ public:
                 q_nonempty = true; // Reset value
                 ts.tv_nsec = 0;
                 ts.tv_sec = 10;
-                surplus_wait_usec = 500;
+                surplus_wait_usec = 100;
             }
 
-            int res = io_uring_wait_cqes_min_timeout(&ring, cqe, 128, &ts, surplus_wait_usec, nullptr);
+            int res = io_uring_wait_cqes_min_timeout(&ring, &cqe, 128, &ts, surplus_wait_usec, nullptr);
+
             if (res != -ETIME && res < 0) {
                 continue;
             }
 
             process_uring();
 
-            for (int i = 0; i < 10 && (handle_dequeue() || (q_nonempty = false)); i++);
+            for (int i = 0; i < 256 && (handle_dequeue() || (q_nonempty = false)); i++);
         }
     }
 
@@ -204,10 +207,12 @@ private:
 
     void process_uring() {
         int i = 0;
-        for (auto ptr = cqe; *ptr && ptr - cqe < 128; ptr++, i++) {
+        unsigned head;
+        io_uring_cqe* ptr;
+        io_uring_for_each_cqe(&ring, head, ptr) {
             bool no_delete = false;
 
-            IoUringAttached* uringdata = reinterpret_cast<IoUringAttached*>(io_uring_cqe_get_data(*ptr));
+            IoUringAttached* uringdata = reinterpret_cast<IoUringAttached*>(io_uring_cqe_get_data(ptr));
             visit(overloaded {
                 [&] (EventData& ev) {
                     // All class operations occur on the same thread, so this is safe
@@ -224,14 +229,14 @@ private:
                         .data = IoUringResult {
                             .calling_id = ev.proc_id,
                             .op = ev.op,
-                            .res = (*ptr)->res
+                            .res = ptr->res
                         },
                     };
 
                     per_thread_data[thread].q.push(dt);
                 },
                 [&] (Timer& tim) {
-                    if ((*ptr)->res == -ETIME) {
+                    if (ptr->res == -ETIME) {
                         Data data = {
                             .ci = {
                                 .thread_id = -1,
@@ -248,18 +253,20 @@ private:
                         };
 
                         per_thread_data[thread].q.push(data);
-                    } else if ((*ptr)->res != -ECANCELED) {
-                        cout << "Unknown timer result: " << (*ptr)->res << endl;
+                    } else if (ptr->res != -ECANCELED) {
+                        cout << "Unknown timer result: " << ptr->res << endl;
                     }
                 },
                 [&] (TimerUpdate& tim_upd) {
-                    if ((*ptr)->res >= 0 && tim_upd.remove)
+                    if (ptr->res >= 0 && tim_upd.remove)
                         timers.erase(tim_upd.timer_id);
                 }
             }, uringdata->data);
 
             if (!no_delete)
                 delete uringdata;
+
+            i++;
         }
 
         io_uring_cq_advance(&ring, i);
@@ -287,6 +294,7 @@ private:
 
     void function_call(FunctionCall& func) {
         obj_info[func.ti.obj_id].ptr->local_data_.thread_data = this;
+        obj_info[func.ti.obj_id].assoc_procs.push_back(func.ti.proc_id);
 
         proc_to_dat[func.ti.proc_id].assoc_obj = func.ti.obj_id;
         proc_to_dat[func.ti.proc_id].back_notify = {func.ci.thread_id, func.ci.obj_id, func.ci.proc_id};
@@ -297,21 +305,21 @@ private:
         process_queued(obj_info[func.ti.obj_id].ptr, func.ti);
 
         if (static_cast<uint64_t>(func.ci.thread_id) < per_thread_data.size()) {
-            per_thread_data[func.ci.thread_id].q.push(
-                ProcedureUpdate {
-                    .type = PUType::StartConfirm,
-                    .resp = resp,
-                    .ci = CallerInfo {
-                        .thread_id = thread,
-                        .obj_id = func.ti.obj_id,
-                        .proc_id = func.ti.proc_id
-                    },
-                    .ti = TargetInfo {
-                        .obj_id = func.ci.obj_id,
-                        .proc_id = func.ci.proc_id
-                    }
-                }
-            );
+            // per_thread_data[func.ci.thread_id].q.push(
+            //     ProcedureUpdate {
+            //         .type = PUType::StartConfirm,
+            //         .resp = resp,
+            //         .ci = CallerInfo {
+            //             .thread_id = thread,
+            //             .obj_id = func.ti.obj_id,
+            //             .proc_id = func.ti.proc_id
+            //         },
+            //         .ti = TargetInfo {
+            //             .obj_id = func.ci.obj_id,
+            //             .proc_id = func.ci.proc_id
+            //         }
+            //     }
+            // );
         }
 
         proc_to_dat[func.ti.proc_id].op_hint = resp.op_hint;

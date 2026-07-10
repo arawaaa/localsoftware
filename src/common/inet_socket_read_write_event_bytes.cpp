@@ -13,9 +13,6 @@ public:
     InetSocketReadWriteEventBytes(vector<shared_ptr<File>> file)
         : Event(file) {}
 
-    void construct_with_global() override {
-    }
-
     CallResponse read(uint64_t, char* buf, size_t len, bool read_all = true) {
         sticky_read_ = read_all;
         read_buffer_ = buf;

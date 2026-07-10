@@ -46,7 +46,7 @@ public:
     Event(Event&) = delete;
     Event operator=(Event&) = delete;
 
-    virtual void construct_with_global() = 0;
+    virtual void construct_with_global() { };
 
     Event() {
         init();
@@ -135,7 +135,11 @@ public:
         auto it = find(vec_evs.begin(), vec_evs.end(), nullopt);
         size_t loc = it - vec_evs.begin();
 
-        vec_evs.emplace(it, EventInfo {nullopt, weak_ptr<Event>()});
+        if (it == vec_evs.end()) {
+            vec_evs.emplace_back(EventInfo {nullopt, weak_ptr<Event>()});
+        } else {
+            it->emplace(EventInfo {nullopt, weak_ptr<Event>()});
+        }
 
         auto f = [&, args..., loc] mutable {
             auto o =  make_shared<Obj>(std::forward<Args>(args)...);
@@ -155,7 +159,7 @@ public:
 
     template <typename Obj>
     void d(size_t idx) {
-        auto opt = uring_data_->sub_events.at(type_index(typeid(Obj))).at(idx);
+        auto& opt = uring_data_->sub_events.at(type_index(typeid(Obj))).at(idx);
         EventInfo& ev = opt.value();
 
         delete_.emplace_back(EventQueuedDelete {

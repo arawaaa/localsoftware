@@ -122,7 +122,7 @@ int setup_server_socket6(int port) {
         return -1;
     }
 
-    if (listen(server_fd, 10) < 0) {
+    if (listen(server_fd, -1) < 0) {
         perror("listen");
         close(server_fd);
         return -1;
@@ -156,7 +156,7 @@ int setup_server_socket(int port) {
         return -1;
     }
 
-    if (listen(server_fd, 10) < 0) {
+    if (listen(server_fd, -1) < 0) {
         perror("listen");
         close(server_fd);
         return -1;
@@ -211,17 +211,16 @@ void server_func() {
 }
 
 int main() {
-    cout << "       /      //------   localsoftware: an io-uring web-server, proxy, and more\n" <<
-            "      /     ///          © Arnav Rawat, GPLv3\n" <<
-            "     /      //           github.com/arawaaa/localsoftware\n" <<
-            "    /       /------/     handmade\n" <<
-            "   /              //     \n" <<
-            "  /              ///     \n" <<
-            " /-----   ------//       \n";
-
-    cout << "Bandwidth Monitor (HTTPS): " << SERVER_PORT << " | ";
-    cout << "Landing Server (HTTP, HTTPS): " << HTTP_PORT << ", " << HTTPS_PORT << " | ";
-    cout << "Reverse Proxy (HTTPS): " << RP_PORT << endl;
+    cout << "       /      //------   localsoftware: an io-uring web-server, proxy, and more" << endl
+         << "      /     ///          © Arnav Rawat, GPLv3" << endl
+         << "     /      //           github.com/arawaaa/localsoftware" << endl
+         << "    /       /------/     handmade" << endl
+         << "   /              //     " << endl
+         << "  /              ///     " << endl
+         << " /-----   ------//       " << endl
+         << "Bandwidth Monitor (HTTPS): " << SERVER_PORT << endl
+         << "Landing Server (HTTP, HTTPS): " << HTTP_PORT << ", " << HTTPS_PORT << endl
+         << "Reverse Proxy (HTTPS): " << RP_PORT << endl;
     
     // Start unified io_uring server thread
     thread server_t(server_func);

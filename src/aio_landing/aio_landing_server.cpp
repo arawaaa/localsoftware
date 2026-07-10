@@ -20,9 +20,6 @@ public:
     AioLandingHTTP(vector<shared_ptr<File>> file, bool enable_tls, const HTTPManager* http_manager)
         : Event(file), http_manager_(http_manager), enable_tls_(enable_tls)
     {
-    }
-
-    void construct_with_global() override {
         i<InetSocketReadWriteEventHTTP>(files_, enable_tls_);
     }
 
@@ -64,14 +61,10 @@ public:
 private:
     void handle_request(boost::beast::http::request_parser<boost::beast::http::string_body>::value_type& req) {
         c(&InetSocketReadWriteEventHTTP::write_http, http_manager_->handle_request(req));
-        begin = std::chrono::steady_clock::now();
         op_read_ = false;
     }
 
     void handle_response() {
-        end = std::chrono::steady_clock::now();
-        const std::chrono::duration<double> elapsed_seconds{end - begin};
-        cout << "Write took: " << elapsed_seconds << endl;
         c(&InetSocketReadWriteEventHTTP::read_http);
         op_read_ = true;
     }
@@ -81,6 +74,4 @@ private:
     const HTTPManager* http_manager_;
     bool enable_tls_;
     uint64_t timer_ = 0;
-
-    std::chrono::time_point<std::chrono::steady_clock> begin, end;
 };

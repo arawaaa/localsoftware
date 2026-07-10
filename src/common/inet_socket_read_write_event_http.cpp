@@ -24,10 +24,6 @@ public:
     InetSocketReadWriteEventHTTP(vector<shared_ptr<File>> file, bool use_ssl = false)
         : Event(file), tls_enabled_(use_ssl)
     {
-
-    }
-
-    void construct_with_global() override {
         if (tls_enabled_)
             i<InetSocketTLSEvent>(files_, true);
         else
@@ -167,7 +163,7 @@ protected:
         size_t consumed = parser_->put(buffer_.data(), ec);
         buffer_.consume(consumed);
 
-        while ((!ec || ec == http::error::need_more) && !parser_->is_done() && (consumed && buffer_.size())) {
+        while (!ec && !parser_->is_done()) {
             consumed = parser_->put(buffer_.data(), ec);
             buffer_.consume(consumed);
         }
