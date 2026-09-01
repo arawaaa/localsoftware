@@ -70,6 +70,10 @@ public:
         return {"HTTP Write", true, nullopt, OP_HINT_WRITE};
     }
 
+    CallResponse write_http_with_file_body(uint64_t, http::response_header<> header, std::string file, int dirfd) {
+
+    }
+
     /**
      * @brief Handle the completion queue entry (CQE) result.
      */
@@ -163,7 +167,7 @@ protected:
         size_t consumed = parser_->put(buffer_.data(), ec);
         buffer_.consume(consumed);
 
-        while (!ec && !parser_->is_done()) {
+        while (!ec && !parser_->is_done() && buffer_.size()) {
             consumed = parser_->put(buffer_.data(), ec);
             buffer_.consume(consumed);
         }

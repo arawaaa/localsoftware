@@ -137,13 +137,9 @@ private:
                 function_call(func);
             },
             [&] (ProcedureUpdate& upd) {
-                obj_info[upd.ti.obj_id].ptr->local_data_.thread_data = this;
-
                 obj_info[upd.ti.obj_id].ptr->start_response(upd.ci.proc_id, upd.resp);
             },
             [&, this] (Delete& del) mutable {
-                obj_info[del.ti.obj_id].ptr->local_data_.thread_data = this;
-
                 auto& children = obj_info[del.ti.obj_id].children;
                 // Propagate deletions
                 for (auto [objid, info] : children) {
@@ -180,7 +176,7 @@ private:
                         .obj_id = rs.ti.obj_id,
                         .proc_id = numeric_limits<uint64_t>::max()
                     },
-                    .uring_data = shared_ptr<any>()
+                    .uring_data = shared_ptr<IoUringData>()
                 };
 
                 FunctionCall fun = {
@@ -278,7 +274,7 @@ private:
         // A secondary function construct_with_global() is allowed to
         // make calls, etc
 
-        context = reinterpret_pointer_cast<IoUringData>(construct.uring_data);
+        context = reinterpret_pointer_cast<IoUringData>(std::move(construct.uring_data));
         obj_info.emplace(construct.ti.obj_id, ObjectDataThreaded {
             .ptr = construct.constructor(),
             .assoc_procs = {},
@@ -286,14 +282,12 @@ private:
             .children = {}
         });
 
-        obj_info[construct.ti.obj_id].ptr->local_data_.thread_data = this;
         obj_info[construct.ti.obj_id].ptr->construct_with_global();
 
         process_queued(obj_info[construct.ti.obj_id].ptr, construct.ti);
     }
 
     void function_call(FunctionCall& func) {
-        obj_info[func.ti.obj_id].ptr->local_data_.thread_data = this;
         obj_info[func.ti.obj_id].assoc_procs.push_back(func.ti.proc_id);
 
         proc_to_dat[func.ti.proc_id].assoc_obj = func.ti.obj_id;
@@ -362,8 +356,6 @@ private:
             || !proc_to_dat.contains(on_data.ti.proc_id)) {
             return;
         }
-
-        obj_info[on_data.ti.obj_id].ptr->local_data_.thread_data = this;
 
         obj_info[on_data.ti.obj_id].ptr->map_event_data(on_data.data);
         auto res = obj_info[on_data.ti.obj_id].ptr->on_yield(on_data.data);
@@ -482,7 +474,7 @@ private:
                     .obj_id = new_obj_id,
                     .proc_id = numeric_limits<uint64_t>::max()
                 },
-                .uring_data = reinterpret_pointer_cast<any>(shared_ptr<Event>())
+                .uring_data = std::move(construct.uring_data)
             };
 
             per_thread_data[thread].q.push(callinfo);

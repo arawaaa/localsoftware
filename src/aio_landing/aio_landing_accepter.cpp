@@ -52,10 +52,6 @@ public:
         });
     }
 
-    void construct_with_global() override {
-
-    }
-
     CallResponse init(uint64_t taskid) {
         taskid_ = taskid;
         queue_accept(0);

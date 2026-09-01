@@ -61,32 +61,27 @@ public:
         memcpy(w_buf_ + idx, buf, len);
 
         arm_write();
-        return {"Websocket Write", true, OP_HINT_WRITE};
+        return {"Websocket Write", true, nullopt, OP_HINT_WRITE};
     }
 
     CallResponse read_frame(uint64_t, char** buf) {
         // TODO implement
         r_buf_ = buf;
-        return {"Websocket Read", true, OP_HINT_READ};
+        return {"Websocket Read", true, nullopt, OP_HINT_READ};
     }
 
     /**
      * @brief Handle the completion queue entry (CQE) result.
      */
-    void on_new_data(int, EventType event) override {
+    optional<pair<bool, int>> on_yield(EventType event) override {
         auto res = get<ChildTaskCompletion>(event);
         if (res.return_code <= 0) {
-            AsyncHandler::self().finalize_current_task(true, res.return_code);
-            return;
+            return pair{true, res.return_code};
         }
 
         delete[] w_buf_;
         w_buf_ = nullptr;
-        AsyncHandler::self().finalize_current_task(false, res.return_code);
-    }
-
-    void procedure_update(PUType, CallResponse) override {
-
+        return pair{false, res.return_code};
     }
 
     string get_info() const override {
@@ -135,24 +130,11 @@ protected:
 
     void arm_write() {
         if (tls_enabled_) {
-            auto [taskid, success] = AsyncHandler::self().call_dependent_function<InetSocketTLSEvent>(
-                this,
-                0,
-                &InetSocketTLSEvent::write,
-                w_buf_,
-                w_len_
-            );
+            auto taskid = c(&InetSocketTLSEvent::write, w_buf_, w_len_);
             taskid_writer_ = taskid;
         } else {
-            auto [taskid, success] = AsyncHandler::self().call_dependent_function<InetSocketReadWriteEventBytes>(
-                this,
-                0,
-                &InetSocketReadWriteEventBytes::write,
-                w_buf_,
-                w_len_
-            );
+            auto taskid = c(&InetSocketReadWriteEventBytes::write, w_buf_, w_len_);
             taskid_writer_ = taskid;
-
         }
     }
 
@@ -165,23 +147,10 @@ protected:
 
     void arm_read(int, int) {
         if (tls_enabled_) {
-            auto [taskid, success] = AsyncHandler::self().call_dependent_function<InetSocketTLSEvent>(
-                this,
-                0,
-                &InetSocketTLSEvent::read,
-                w_buf_,
-                w_len_,
-                false
-            );
+            auto taskid = c(&InetSocketTLSEvent::read, w_buf_, w_len_, false);
             taskid_writer_ = taskid;
         } else {
-            auto [taskid, success] = AsyncHandler::self().call_dependent_function<InetSocketReadWriteEventBytes>(
-                this,
-                0,
-                &InetSocketReadWriteEventBytes::write,
-                w_buf_,
-                w_len_
-            );
+            auto taskid = c(&InetSocketReadWriteEventBytes::write, w_buf_, w_len_);
             taskid_writer_ = taskid;
 
         }

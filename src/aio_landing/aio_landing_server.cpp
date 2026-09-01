@@ -18,9 +18,9 @@ class AioLandingHTTP : public Event {
     struct overloaded : Ts... { using Ts::operator()...; };
 public:
     AioLandingHTTP(vector<shared_ptr<File>> file, bool enable_tls, const HTTPManager* http_manager)
-        : Event(file), http_manager_(http_manager), enable_tls_(enable_tls)
+        : Event(file), http_manager_(http_manager)
     {
-        i<InetSocketReadWriteEventHTTP>(files_, enable_tls_);
+        i<InetSocketReadWriteEventHTTP>(files_, enable_tls);
     }
 
     CallResponse start(uint64_t) {
@@ -72,6 +72,5 @@ private:
     const __kernel_timespec ts = {.tv_sec = 180, .tv_nsec=0};
     bool op_read_;
     const HTTPManager* http_manager_;
-    bool enable_tls_;
     uint64_t timer_ = 0;
 };

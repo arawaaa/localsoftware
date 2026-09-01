@@ -63,70 +63,6 @@ struct Timeout {
 
 using EventType = variant<CallStarted, Timeout, IoUringResult, Wakeup, ChildTaskCompletion>;
 
-// Workqueue types
-
-struct CallResponse {
-    string description;
-    bool success;
-    optional<pair<bool, int>> ret;
-    uint32_t op_hint;
-};
-
-struct CallerInfo {
-    int thread_id;
-    uint64_t obj_id;
-    uint64_t proc_id;
-};
-
-struct TargetInfo {
-    uint64_t obj_id;
-    uint64_t proc_id;
-};
-
-struct RootStart {
-    ConstructFunc constructor;
-    FunctionFunc init;
-    TargetInfo ti;
-};
-
-struct ConstructorCall {
-    ConstructFunc constructor;
-    CallerInfo ci;
-    TargetInfo ti;
-    // Type erased pointer for shared context container
-    shared_ptr<std::any> uring_data;
-};
-
-struct FunctionCall {
-
-    FunctionFunc call;
-    CallerInfo ci;
-    TargetInfo ti;
-};
-
-enum class PUType : int {
-    StartConfirm,
-    Yield
-};
-
-struct ProcedureUpdate {
-    PUType type;
-    CallResponse resp;
-    CallerInfo ci;
-    TargetInfo ti;
-};
-
-struct Delete {
-    CallerInfo ci;
-    TargetInfo ti;
-};
-
-struct Data {
-    CallerInfo ci;
-    TargetInfo ti;
-    EventType data;
-};
-
 // Types passed within a variant to the user data in IoUring calls
 
 struct EventData {
@@ -195,38 +131,4 @@ struct TimerData {
     IoUringAttached* ptr;
     uint64_t obj_id;
     unique_ptr<__kernel_timespec> ts;
-};
-
-// Event Queued Item Structs
-
-struct EventQueuedConstruct {
-    type_index idx;
-    size_t vidx;
-    ConstructFunc fun;
-};
-
-struct EventQueuedFunction {
-    type_index idx;
-    size_t vidx;
-    uint64_t local_id;
-    FunctionFunc fun;
-};
-
-struct EventQueuedUring {
-    int op;
-    function<void(io_uring_sqe*)> fun;
-};
-
-struct EventQueuedTimer {
-    uint64_t local_id;
-    __kernel_timespec time;
-};
-
-struct EventQueuedDelete {
-    unordered_set<int> thread;
-    uint64_t obj_id;
-};
-
-struct EventQueuedAttach {
-    uint64_t target_local_id;
 };

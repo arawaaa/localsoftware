@@ -29,18 +29,12 @@ class Event {
     template<class... Ts>
     struct overloaded : Ts... { using Ts::operator()...; };
 public:
-    struct LocalData {
-        int id;
-        ThreadData* thread_data;
-        Event* outer_event;
-    };
-
     /**
      * For constructors: do not call any delegated class functions. They will not have a context
      * to run within and will not be run!
      */
     explicit Event(vector<shared_ptr<File>> file) : files_(file) {
-        init();
+        event_init();
     }
 
     Event(Event&) = delete;
@@ -49,7 +43,7 @@ public:
     virtual void construct_with_global() { };
 
     Event() {
-        init();
+        event_init();
     }
 
     virtual ~Event();
@@ -131,30 +125,12 @@ public:
     // With functions that return "Promise" objects that lambdas can be attached to
     template <typename Obj, typename... Args>
     size_t i(Args... args) {
-        auto& vec_evs = uring_data_->sub_events[type_index(typeid(Obj))];
-        auto it = find(vec_evs.begin(), vec_evs.end(), nullopt);
-        size_t loc = it - vec_evs.begin();
+        return construct<Obj>(false, args...);
+    }
 
-        if (it == vec_evs.end()) {
-            vec_evs.emplace_back(EventInfo {nullopt, weak_ptr<Event>()});
-        } else {
-            it->emplace(EventInfo {nullopt, weak_ptr<Event>()});
-        }
-
-        auto f = [&, args..., loc] mutable {
-            auto o =  make_shared<Obj>(std::forward<Args>(args)...);
-            // WARNING weak ptr should not be used prior to remote initialization, can be guaranteed when a function returns
-            uring_data_->sub_events[type_index(typeid(Obj))][loc]->event = o;
-            return o;
-        };
-
-        construct_.emplace_back(EventQueuedConstruct {
-            .idx = type_index(typeid(Obj)),
-            .vidx = loc,
-            .fun = f
-        });
-
-        return loc;
+    template <typename Obj, typename... Args>
+    size_t i_s(Args... args) {
+        return construct<Obj>(true, args...);
     }
 
     template <typename Obj>
@@ -219,7 +195,6 @@ public:
     }
 
     shared_ptr<IoUringData> uring_data_;
-    LocalData local_data_;
 
     template <typename T>
     list<T>& get_queued() {
@@ -272,12 +247,44 @@ protected:
     vector<shared_ptr<File>> files_;
 
 private:
-    void init() {
+    void event_init() {
         if (context) {
-            uring_data_ = context;
+            uring_data_ = std::move(context);
         } else {
             uring_data_ = make_shared<IoUringData>();
         }
+    }
+
+    template <typename Obj, typename... Args>
+    size_t construct(bool shared, Args... args) {
+        auto& vec_evs = uring_data_->sub_events[type_index(typeid(Obj))];
+        auto it = find(vec_evs.begin(), vec_evs.end(), nullopt);
+        size_t loc = it - vec_evs.begin();
+
+        if (it == vec_evs.end()) {
+            vec_evs.emplace_back(EventInfo {nullopt, weak_ptr<Event>()});
+        } else {
+            it->emplace(EventInfo {nullopt, weak_ptr<Event>()});
+        }
+
+        auto f = [&, args..., loc] mutable {
+            auto o =  make_shared<Obj>(std::forward<Args>(args)...);
+            // WARNING weak ptr should not be used prior to remote initialization, can be guaranteed when a function returns
+            uring_data_->sub_events[type_index(typeid(Obj))][loc]->event = o;
+            return o;
+        };
+
+        construct_.emplace_back(EventQueuedConstruct {
+            .idx = type_index(typeid(Obj)),
+            .vidx = loc,
+            .fun = f
+        });
+
+        if (shared) {
+            construct_.back().uring_data = uring_data_;
+        }
+
+        return loc;
     }
 
     list<EventQueuedConstruct> construct_;

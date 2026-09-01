@@ -17,7 +17,7 @@
 #include <openssl/sha.h>
 
 #include "common/io_uring_manager.cpp"
-// #include "bandwidth_monitor/accept_event.cpp"
+#include "bandwidth_monitor/accept_event.cpp"
 #include "aio_landing/aio_landing_accepter.cpp"
 // #include "reverse_proxy/reverse_proxy_accept.cpp"
 #include "logging/visit_stats.cpp"
@@ -25,10 +25,10 @@
 using namespace std;
 
 // Constants
-const string INTERFACE = "wlan0";
+const string INTERFACE = "wlp1s0";
 const string RX_FILE = "/sys/class/net/" + INTERFACE + "/statistics/rx_bytes";
 const string TX_FILE = "/sys/class/net/" + INTERFACE + "/statistics/tx_bytes";
-const string LOG_FILE = "/var/log/wlan_monitor/wlan_usage.log";
+const string LOG_FILE = "/var/log/localsoftware/wlan_usage.log";
 constexpr int SERVER_PORT = 8443;
 constexpr int RP_PORT = 18789;
 constexpr int HTTP_PORT = 80;
@@ -38,33 +38,6 @@ constexpr int HTTPS_PORT = 443;
 double global_rx_speed = 0.0;
 double global_tx_speed = 0.0;
 mutex speed_mutex;
-
-// Base64 Implementation
-const char encoding_table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-const int mod_table[] = {0, 2, 1};
-
-string base64_encode(const unsigned char *data, size_t input_length) {
-    size_t output_length = 4 * ((input_length + 2) / 3);
-    string encoded_data(output_length, '\0');
-
-    for (size_t i = 0, j = 0; i < input_length;) {
-        uint32_t octet_a = i < input_length ? data[i++] : 0;
-        uint32_t octet_b = i < input_length ? data[i++] : 0;
-        uint32_t octet_c = i < input_length ? data[i++] : 0;
-
-        uint32_t triple = (octet_a << 0x10) + (octet_b << 0x08) + octet_c;
-
-        encoded_data[j++] = encoding_table[(triple >> 3 * 6) & 0x3F];
-        encoded_data[j++] = encoding_table[(triple >> 2 * 6) & 0x3F];
-        encoded_data[j++] = encoding_table[(triple >> 1 * 6) & 0x3F];
-        encoded_data[j++] = encoding_table[(triple >> 0 * 6) & 0x3F];
-    }
-
-    for (int i = 0; i < mod_table[input_length % 3]; i++)
-        encoded_data[output_length - 1 - i] = '=';
-
-    return encoded_data;
-}
 
 unsigned long long read_bytes(const string& filename) {
     ifstream f(filename);
@@ -166,12 +139,12 @@ int setup_server_socket(int port) {
 
 void server_func() {
     // Single stack IPv6 for all surfaces outside of homepage, which is dual-stack
-    // shared_ptr<File> ws_fd = make_shared<File>(setup_server_socket(SERVER_PORT));
-    // if (ws_fd->get() < 0) return;
-    //
-    // shared_ptr<File> ws6_fd = make_shared<File>(setup_server_socket6(SERVER_PORT));
-    // if (ws6_fd->get() < 0) return;
-    //
+    shared_ptr<File> ws_fd = make_shared<File>(setup_server_socket(SERVER_PORT));
+    if (ws_fd->get() < 0) return;
+
+    shared_ptr<File> ws6_fd = make_shared<File>(setup_server_socket6(SERVER_PORT));
+    if (ws6_fd->get() < 0) return;
+
     shared_ptr<File> http6_fd = make_shared<File>(setup_server_socket6(HTTP_PORT));
     if (http6_fd->get() < 0) return;
 
@@ -183,7 +156,7 @@ void server_func() {
 
     shared_ptr<File> https6_fd = make_shared<File>(setup_server_socket6(HTTPS_PORT));
     if (https6_fd->get() < 0) return;
-    //
+
     // shared_ptr<File> rphttps_fd = make_shared<File>(setup_server_socket(RP_PORT));
     // if (rphttps_fd->get() < 0) return;
 
@@ -191,18 +164,17 @@ void server_func() {
     auto& instance = AsyncHandler::self(1);
 
     // Setup WebSocket Accept Event
-    // auto ws_files = {ws_fd, ws6_fd};
-    // instance.initialize_root_event<BandwidthMonitorAcceptEvent>(ws_files, true, "/srv/bwith");
-    //
-    // // Setup HTTP Landing Accept Event
+    auto ws_files = {ws_fd, ws6_fd};
+    instance.initialize_root_event<BandwidthMonitorAcceptEvent>(ws_files, true, "/srv/bwith");
+
+    // Setup HTTP Landing Accept Event
     vector<shared_ptr<File>> http_files = {http_fd, http6_fd};
     instance.initialize_root_event<LandingAccept>(http_files, false, "/srv/landing");
-    // instance.initialize_root_event<TestClass>(http_files);
     //
-    // // Setup HTTPS Landing Accept Event
+    // Setup HTTPS Landing Accept Event
     vector<shared_ptr<File>> https_files = {https_fd, https6_fd};
     instance.initialize_root_event<LandingAccept>(https_files, true, "/srv/landing");
-    //
+
     // vector<shared_ptr<File>> rp_files = {rphttps_fd};
     // instance.initialize_root_event<ReverseProxyAccept>(rp_files, "/srv/rp");
     // instance.call_root_function<ReverseProxyAccept>(res, &ReverseProxyAccept::prepare_accept);
@@ -227,7 +199,6 @@ int main() {
     server_t.detach();
 
     unsigned long long rx_prev = read_bytes(RX_FILE);
-
     unsigned long long tx_prev = read_bytes(TX_FILE);
     
     time_t now = time(nullptr);

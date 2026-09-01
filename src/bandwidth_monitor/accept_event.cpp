@@ -19,37 +19,35 @@ public:
         client_addr_len_ = sizeof(client_addr_);
     }
 
-    CallResponse prepare_accept(uint64_t) {
+    CallResponse init(uint64_t) {
         queue_accept(0);
         queue_accept(1);
-        return {"Bandwidth Monitor accept", true, 0};
+        return {"Bandwidth Monitor accept", true, nullopt, OP_HINT_NETWORK};
     }
 
-    void on_new_data(int op, EventType event) override {
+    optional<pair<bool, int>> on_yield(EventType event) override {
         if (holds_alternative<ChildTaskCompletion>(event)) {
             std::cout << "Connection close" << std::endl;
             auto res = get<ChildTaskCompletion>(event);
-            AsyncHandler::self().free_child_event_for_taskid<BandwidthMonitoringServer>(this, res.task_id);
+            d<BandwidthMonitoringServer>(indices_[res.task_id]);
         } else {
-            int res = get<IoUringResult>(event).res;
-            if (res >= 0) {
+            IoUringResult& res = get<IoUringResult>(event);
+            if (res.res >= 0) {
                 char ip_str[INET6_ADDRSTRLEN];
-                if (!op)
+                if (!res.op)
                     inet_ntop(AF_INET, &(client_addr_.sin_addr), ip_str, INET_ADDRSTRLEN);
                 else
                     inet_ntop(AF_INET6, &(client_addr6_.sin6_addr), ip_str, INET6_ADDRSTRLEN);
-                cout << "[MONITOR" << (enable_tls_ ? " TLS" : "") << (op ? " IPv6" : " IPv4") << "] Accept with [" << ip_str << "]:" << (op ? client_addr6_.sin6_port : client_addr_.sin_port) << endl;
-                auto client_file = vector<shared_ptr<File>>{make_shared<File>(res)};
-                int idx = AsyncHandler::self().initialize_dependent_event<BandwidthMonitoringServer>(this, client_file, enable_tls_, http_manager_);
-                AsyncHandler::self().call_dependent_function<BandwidthMonitoringServer>(
-                    this,
-                    idx,
-                    &BandwidthMonitoringServer::start
-                );
+                cout << "[MONITOR" << (enable_tls_ ? " TLS" : "") << (res.op ? " IPv6" : " IPv4") << "] Accept with [" << ip_str << "]:" << (res.op ? client_addr6_.sin6_port : client_addr_.sin_port) << endl;
+                auto client_file = vector<shared_ptr<File>>{make_shared<File>(res.res)};
+                int idx = i<BandwidthMonitoringServer>(client_file, enable_tls_, &http_manager_);
+                uint64_t taskid = c(idx, &BandwidthMonitoringServer::start);
+                indices_[taskid] = idx;
             }
             // Re-arm immediately
-            queue_accept(op);
+            queue_accept(res.op);
         }
+        return nullopt;
     }
 
     std::string get_info() const override {
@@ -58,27 +56,11 @@ public:
 
 private:
     void queue_accept(int op) {
-        if (op == 0) {
-            AsyncHandler::self().cache_call(
-                this,
-                0,
-                io_uring_prep_accept,
-                files_[0]->get(),
-                reinterpret_cast<struct sockaddr*>(&client_addr_),
-                &client_addr_len_,
-                0
-            );
-        } else if (op == 1) {
-            AsyncHandler::self().cache_call(
-                this,
-                1,
-                io_uring_prep_accept,
-                files_[1]->get(),
-                reinterpret_cast<struct sockaddr*>(&client_addr6_),
-                &client_addr6_len_,
-                0
-            );
-        }
+        c(op, &io_uring_prep_accept, files_[op]->get(),
+            op == 0 ? reinterpret_cast<struct sockaddr*>(&client_addr_)
+                : reinterpret_cast<struct sockaddr*>(&client_addr6_),
+            op == 0 ? &client_addr_len_
+                : &client_addr6_len_, 0);
     }
 
     HTTPManager http_manager_;
@@ -87,4 +69,5 @@ private:
     socklen_t client_addr_len_;
     struct sockaddr_in6 client_addr6_{};
     socklen_t client_addr6_len_;
+    unordered_map<uint64_t, int> indices_;
 };
