@@ -199,13 +199,11 @@ protected:
                     if (u_readlen_ - u_read_p_ == 0 || (!sticky_read_ && u_read_p_)) {
                         // Done, or received initial message only
                         return pair{false, u_read_p_};
-                    } else if (!BIO_ctrl_pending(readbuf_)) {
-                        // Do we need this?
-                        // Nothing else in the BIO, still incomplete. Continue
+                    } else if (!e_read_s_) {
                         arm_read();
                         return nullopt;
-                    } // else { repeat }
-                    break;
+                    }
+                    break; // Obtain remaining bytes
                 default:
                     ERR_print_errors_fp(stderr);
                     return pair{true, -1};
@@ -281,7 +279,7 @@ int osslcb_read(BIO* b, char* dat, size_t len, size_t *written) {
     if (!size) {
         *written = 0;
         BIO_set_retry_read(b);
-        return 1;
+        return -1;
     }
 
     size_t towrite = min(size, len);
