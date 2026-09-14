@@ -1,0 +1,62 @@
+material,part,thickness_or_smallest_in,middle_in,longest_in,quantity
+insulation,Door insulation,2.5,24.75,64.75,1
+insulation,Header insulation pack,1.0,3.5,31.0,1
+insulation,Roof cavity insulation,3.5,22.28,50.62,2
+insulation,Roof cavity insulation,3.5,24.78,50.62,2
+insulation,Wall cavity insulation,2.5,3.46,8.31,2
+insulation,Wall cavity insulation,2.5,3.46,13.25,2
+insulation,Wall cavity insulation,2.5,3.5,8.31,2
+insulation,Wall cavity insulation,2.5,8.31,69.915,2
+insulation,Wall cavity insulation,2.5,15.8733,76.875,3
+insulation,Wall cavity insulation,2.5,22.28,76.875,8
+isolation pad,Curb capillary break,0.125,2.81,28.0,1
+isolation pad,Sill capillary break,0.125,2.5,12.81,2
+isolation pad,Sill capillary break,0.125,2.5,53.62,1
+isolation pad,Sill capillary break,0.125,2.5,96.62,2
+liner,Ceiling liner,0.06,48.0,96.0,1
+liner,Door liner,0.06,27.75,67.75,1
+liner,Floor liner on concrete,0.04,48.0,96.0,1
+liner,Front left liner,0.06,10.0,79.875,1
+liner,Front overdoor liner,0.06,8.46,28.0,1
+liner,Front right liner,0.06,10.0,79.875,1
+liner,Liner folded over curb,0.04,2.81,28.0,1
+liner,Liner outer curb face,0.04,3.54,28.0,1
+liner,Tray end upstand,0.04,3.5,47.92,2
+liner,Tray side upstand,0.04,3.5,96.0,2
+liner,back liner,0.06,48.0,79.875,1
+liner,left liner,0.06,79.875,96.12,1
+liner,right liner,0.06,79.875,96.12,1
+lumber,Bottom plate,1.5,2.5,12.81,2
+lumber,Bottom plate,1.5,2.5,53.62,1
+lumber,Bottom plate,1.5,2.5,96.62,2
+lumber,Door header,1.5,3.5,31.0,1
+lumber,Door jack stud,1.5,2.5,69.915,2
+lumber,Door rail,1.5,2.5,24.75,2
+lumber,Door stile,1.5,2.5,67.75,2
+lumber,Doorway curb backing,2.81,3.375,28.0,1
+lumber,Header cripple,1.5,2.5,3.46,3
+lumber,Light-support crossmember 1,1.5,3.5,53.62,1
+lumber,Light-support crossmember 2,1.5,3.5,53.62,1
+lumber,Light-support crossmember 3,1.5,3.5,53.62,1
+lumber,Roof end member,1.5,3.5,53.62,2
+lumber,Roof side rim segment,1.5,3.5,22.28,4
+lumber,Roof side rim segment,1.5,3.5,24.78,4
+lumber,Top plate,1.5,2.5,53.62,2
+lumber,Top plate,1.5,2.5,96.62,2
+lumber,Wall stud,1.5,2.5,76.875,18
+plywood,Door plywood,0.375,27.75,67.75,1
+plywood,Front left plywood,0.375,12.81,79.875,1
+plywood,Front overdoor plywood,0.375,8.46,28.0,1
+plywood,Front right plywood,0.375,12.81,79.875,1
+plywood,Roof cap,0.5,54.37,102.37,1
+plywood,back plywood,0.375,53.62,79.875,1
+plywood,left plywood,0.375,79.875,102.37,1
+plywood,right plywood,0.375,79.875,102.37,1
+substrate,Ceiling substrate,0.5,48.0,96.0,1
+substrate,Door substrate,0.25,27.75,67.75,1
+substrate,Front left substrate,0.25,10.06,79.875,1
+substrate,Front overdoor substrate,0.25,8.46,28.0,1
+substrate,Front right substrate,0.25,10.06,79.875,1
+substrate,back substrate,0.25,48.12,79.875,1
+substrate,left substrate,0.25,79.875,96.62,1
+substrate,right substrate,0.25,79.875,96.62,1

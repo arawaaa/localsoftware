@@ -1,0 +1,79 @@
+{
+  "exterior_in": [
+    54.37,
+    102.37,
+    84.0
+  ],
+  "clear_interior_in": [
+    48.0,
+    96.0,
+    79.39999999999999
+  ],
+  "interior_volume_ft3": 211.73333333333332,
+  "wall_thickness_in": 3.185,
+  "floor_top_in": 0.04,
+  "roof_thickness_in": 4.0,
+  "ceiling_finish_thickness_in": 0.56,
+  "tray_upstand_in": 3.5,
+  "tray_clear_bottom_in": [
+    47.92,
+    95.92
+  ],
+  "minimum_unfolded_liner_blank_in": [
+    55.0,
+    103.0
+  ],
+  "liner_blank_note": "Geometric minimum only; add material for corner folds, attachment overlap and wrapping the doorway curb.",
+  "door_rough_opening_in": [
+    28.0,
+    68.0
+  ],
+  "door_opening_bottom_above_slab_in": 3.54,
+  "roof_load_study": {
+    "interior_light_support_members": 3,
+    "end_members": 2,
+    "member_actual_section_in": [
+      1.5,
+      3.5
+    ],
+    "member_cut_length_in": 53.62,
+    "bearing_center_span_in": 51.12,
+    "nominal_bearing_length_each_end_in": 2.5,
+    "support_centers_from_front_outside_in": [
+      1.125,
+      27.405,
+      51.185,
+      74.965,
+      101.245
+    ],
+    "largest_roof_support_spacing_in": 26.28,
+    "total_hanging_weight_lb": null,
+    "load_case": "Conservatively put the entire entered hanging load at midspan of one interior crossmember, plus its tributary roof dead load.",
+    "maximum_bending_stress_demand_psi": null,
+    "instantaneous_deflection_in": null,
+    "reaction_at_each_end_lb": null,
+    "status": "NOT LOAD RATED. Confirm light/hardware weights, lumber species/grade, service conditions, roof/ceiling panel spans, bearing, joints, wall bracing and freestanding stability. E and dead load are illustrative; creep is excluded."
+  },
+  "environment": {
+    "inside_dew_point_c": 17.96,
+    "inside_humidity_ratio_kg_per_kg": 0.012877,
+    "makeup_humidity_ratio_kg_per_kg": 0.004549,
+    "minimum_exhaust_cfm_for_moisture_only": 7.62,
+    "sealed_mode_minimum_water_removal_l_per_day": 3.0,
+    "walls_roof_conductance_w_per_k": 11.83,
+    "walls_roof_conduction_outward_w_positive_is_heat_loss": 177.5,
+    "slab_heat_transfer_w": null,
+    "caveat": "Illustrative inputs, assumed whole-assembly R values. No leakage, solar, thermal-bridge/surface-temperature simulation, transient storage, ventilation heat, or dehumidifier heat. Uninsulated slab heat transfer is excluded; slab temperature and ground coupling are unknown. Moisture-only airflow is not a fan selection or a fresh-air requirement."
+  },
+  "net_sheet_area_ft2": {
+    "liner 0.04 in": 40.230833333333344,
+    "isolation pad 0.125 in": 5.276944444444444,
+    "plywood 0.375 in": 172.22114583333337,
+    "substrate 0.25 in": 159.74067708333334,
+    "liner 0.06 in": 191.05286458333333,
+    "substrate 0.5 in": 32.0,
+    "plywood 0.5 in": 38.65178402777778
+  },
+  "sheet_note": "Net area only: add seams/blocking, nesting and waste. Large panels need joined sheets.",
+  "cut_note": "Concept pieces. Tray solids describe folds in one sheet, not separate pieces to cut. Jamb returns, stops, seals, seam blocking, fasteners and hanging hardware not quantified."
+}

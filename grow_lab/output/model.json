@@ -1,0 +1,1791 @@
+{
+  "units": "inches",
+  "config": {
+    "interior_width_in": 48.0,
+    "interior_depth_in": 96.0,
+    "overall_height_in": 84.0,
+    "door_rough_width_in": 28.0,
+    "door_rough_height_in": 68.0,
+    "max_stud_spacing_in": 24.0,
+    "tray_upstand_in": 3.5,
+    "roof_crossmember_count": 3,
+    "total_hanging_weight_lb": null,
+    "assumed_roof_dead_load_psf": 6.0,
+    "assumed_lumber_e_psi": 1000000.0,
+    "inside_temp_c": 25.0,
+    "inside_rh_percent": 65.0,
+    "garage_temp_c": 10.0,
+    "garage_rh_percent": 60.0,
+    "makeup_temp_c": 10.0,
+    "makeup_rh_percent": 60.0,
+    "water_evaporated_l_per_day": 3.0,
+    "equipment_watts": 300.0,
+    "assumed_wall_r_imperial": 9.0,
+    "assumed_roof_r_imperial": 12.0
+  },
+  "summary": {
+    "exterior_in": [
+      54.37,
+      102.37,
+      84.0
+    ],
+    "clear_interior_in": [
+      48.0,
+      96.0,
+      79.39999999999999
+    ],
+    "interior_volume_ft3": 211.73333333333332,
+    "wall_thickness_in": 3.185,
+    "floor_top_in": 0.04,
+    "roof_thickness_in": 4.0,
+    "ceiling_finish_thickness_in": 0.56,
+    "tray_upstand_in": 3.5,
+    "tray_clear_bottom_in": [
+      47.92,
+      95.92
+    ],
+    "minimum_unfolded_liner_blank_in": [
+      55.0,
+      103.0
+    ],
+    "liner_blank_note": "Geometric minimum only; add material for corner folds, attachment overlap and wrapping the doorway curb.",
+    "door_rough_opening_in": [
+      28.0,
+      68.0
+    ],
+    "door_opening_bottom_above_slab_in": 3.54,
+    "roof_load_study": {
+      "interior_light_support_members": 3,
+      "end_members": 2,
+      "member_actual_section_in": [
+        1.5,
+        3.5
+      ],
+      "member_cut_length_in": 53.62,
+      "bearing_center_span_in": 51.12,
+      "nominal_bearing_length_each_end_in": 2.5,
+      "support_centers_from_front_outside_in": [
+        1.125,
+        27.405,
+        51.185,
+        74.965,
+        101.245
+      ],
+      "largest_roof_support_spacing_in": 26.28,
+      "total_hanging_weight_lb": null,
+      "load_case": "Conservatively put the entire entered hanging load at midspan of one interior crossmember, plus its tributary roof dead load.",
+      "maximum_bending_stress_demand_psi": null,
+      "instantaneous_deflection_in": null,
+      "reaction_at_each_end_lb": null,
+      "status": "NOT LOAD RATED. Confirm light/hardware weights, lumber species/grade, service conditions, roof/ceiling panel spans, bearing, joints, wall bracing and freestanding stability. E and dead load are illustrative; creep is excluded."
+    },
+    "environment": {
+      "inside_dew_point_c": 17.96,
+      "inside_humidity_ratio_kg_per_kg": 0.012877,
+      "makeup_humidity_ratio_kg_per_kg": 0.004549,
+      "minimum_exhaust_cfm_for_moisture_only": 7.62,
+      "sealed_mode_minimum_water_removal_l_per_day": 3.0,
+      "walls_roof_conductance_w_per_k": 11.83,
+      "walls_roof_conduction_outward_w_positive_is_heat_loss": 177.5,
+      "slab_heat_transfer_w": null,
+      "caveat": "Illustrative inputs, assumed whole-assembly R values. No leakage, solar, thermal-bridge/surface-temperature simulation, transient storage, ventilation heat, or dehumidifier heat. Uninsulated slab heat transfer is excluded; slab temperature and ground coupling are unknown. Moisture-only airflow is not a fan selection or a fresh-air requirement."
+    }
+  },
+  "parts": [
+    {
+      "name": "Floor liner on concrete",
+      "assembly": "tray",
+      "material": "liner",
+      "origin": [
+        3.185,
+        3.185,
+        0
+      ],
+      "size": [
+        48.0,
+        96.0,
+        0.04
+      ]
+    },
+    {
+      "name": "Tray side upstand",
+      "assembly": "tray",
+      "material": "liner",
+      "origin": [
+        3.185,
+        3.185,
+        0.04
+      ],
+      "size": [
+        0.04,
+        96.0,
+        3.5
+      ]
+    },
+    {
+      "name": "Tray side upstand",
+      "assembly": "tray",
+      "material": "liner",
+      "origin": [
+        51.144999999999996,
+        3.185,
+        0.04
+      ],
+      "size": [
+        0.04,
+        96.0,
+        3.5
+      ]
+    },
+    {
+      "name": "Tray end upstand",
+      "assembly": "tray",
+      "material": "liner",
+      "origin": [
+        3.225,
+        3.185,
+        0.04
+      ],
+      "size": [
+        47.92,
+        0.04,
+        3.5
+      ]
+    },
+    {
+      "name": "Tray end upstand",
+      "assembly": "tray",
+      "material": "liner",
+      "origin": [
+        3.225,
+        99.145,
+        0.04
+      ],
+      "size": [
+        47.92,
+        0.04,
+        3.5
+      ]
+    },
+    {
+      "name": "Doorway curb backing",
+      "assembly": "threshold",
+      "material": "lumber",
+      "origin": [
+        13.184999999999999,
+        0.375,
+        0.125
+      ],
+      "size": [
+        28.0,
+        2.81,
+        3.375
+      ]
+    },
+    {
+      "name": "Liner folded over curb",
+      "assembly": "threshold",
+      "material": "liner",
+      "origin": [
+        13.184999999999999,
+        0.375,
+        3.5
+      ],
+      "size": [
+        28.0,
+        2.81,
+        0.04
+      ]
+    },
+    {
+      "name": "Liner outer curb face",
+      "assembly": "threshold",
+      "material": "liner",
+      "origin": [
+        13.184999999999999,
+        0.335,
+        0
+      ],
+      "size": [
+        28.0,
+        0.04,
+        3.54
+      ]
+    },
+    {
+      "name": "Curb capillary break",
+      "assembly": "threshold",
+      "material": "isolation pad",
+      "origin": [
+        13.184999999999999,
+        0.375,
+        0
+      ],
+      "size": [
+        28.0,
+        2.81,
+        0.125
+      ]
+    },
+    {
+      "name": "Bottom plate",
+      "assembly": "front",
+      "material": "lumber",
+      "origin": [
+        0.375,
+        0.375,
+        0.125
+      ],
+      "size": [
+        12.809999999999999,
+        2.5,
+        1.5
+      ]
+    },
+    {
+      "name": "Sill capillary break",
+      "assembly": "front",
+      "material": "isolation pad",
+      "origin": [
+        0.375,
+        0.375,
+        0
+      ],
+      "size": [
+        12.809999999999999,
+        2.5,
+        0.125
+      ]
+    },
+    {
+      "name": "Bottom plate",
+      "assembly": "front",
+      "material": "lumber",
+      "origin": [
+        41.185,
+        0.375,
+        0.125
+      ],
+      "size": [
+        12.809999999999995,
+        2.5,
+        1.5
+      ]
+    },
+    {
+      "name": "Sill capillary break",
+      "assembly": "front",
+      "material": "isolation pad",
+      "origin": [
+        41.185,
+        0.375,
+        0
+      ],
+      "size": [
+        12.809999999999995,
+        2.5,
+        0.125
+      ]
+    },
+    {
+      "name": "Top plate",
+      "assembly": "front",
+      "material": "lumber",
+      "origin": [
+        0.375,
+        0.375,
+        78.5
+      ],
+      "size": [
+        53.62,
+        2.5,
+        1.5
+      ]
+    },
+    {
+      "name": "Door jack stud",
+      "assembly": "front",
+      "material": "lumber",
+      "origin": [
+        11.684999999999999,
+        0.375,
+        1.625
+      ],
+      "size": [
+        1.5,
+        2.5,
+        69.915
+      ]
+    },
+    {
+      "name": "Door jack stud",
+      "assembly": "front",
+      "material": "lumber",
+      "origin": [
+        41.185,
+        0.375,
+        1.625
+      ],
+      "size": [
+        1.5,
+        2.5,
+        69.915
+      ]
+    },
+    {
+      "name": "Door header",
+      "assembly": "front",
+      "material": "lumber",
+      "origin": [
+        11.684999999999999,
+        0.375,
+        71.54
+      ],
+      "size": [
+        31.0,
+        1.5,
+        3.5
+      ]
+    },
+    {
+      "name": "Header insulation pack",
+      "assembly": "front",
+      "material": "insulation",
+      "origin": [
+        11.684999999999999,
+        1.875,
+        71.54
+      ],
+      "size": [
+        31.0,
+        1.0,
+        3.5
+      ]
+    },
+    {
+      "name": "Header cripple",
+      "assembly": "front",
+      "material": "lumber",
+      "origin": [
+        11.684999999999999,
+        0.375,
+        75.04
+      ],
+      "size": [
+        1.5,
+        2.5,
+        3.4599999999999937
+      ]
+    },
+    {
+      "name": "Header cripple",
+      "assembly": "front",
+      "material": "lumber",
+      "origin": [
+        26.435000000000002,
+        0.375,
+        75.04
+      ],
+      "size": [
+        1.5,
+        2.5,
+        3.4599999999999937
+      ]
+    },
+    {
+      "name": "Header cripple",
+      "assembly": "front",
+      "material": "lumber",
+      "origin": [
+        41.185,
+        0.375,
+        75.04
+      ],
+      "size": [
+        1.5,
+        2.5,
+        3.4599999999999937
+      ]
+    },
+    {
+      "name": "Wall stud",
+      "assembly": "front",
+      "material": "lumber",
+      "origin": [
+        0.375,
+        0.375,
+        1.625
+      ],
+      "size": [
+        1.5,
+        2.5,
+        76.875
+      ]
+    },
+    {
+      "name": "Wall stud",
+      "assembly": "front",
+      "material": "lumber",
+      "origin": [
+        10.184999999999999,
+        0.375,
+        1.625
+      ],
+      "size": [
+        1.5,
+        2.5,
+        76.875
+      ]
+    },
+    {
+      "name": "Wall stud",
+      "assembly": "front",
+      "material": "lumber",
+      "origin": [
+        42.685,
+        0.375,
+        1.625
+      ],
+      "size": [
+        1.5,
+        2.5,
+        76.875
+      ]
+    },
+    {
+      "name": "Wall stud",
+      "assembly": "front",
+      "material": "lumber",
+      "origin": [
+        52.495,
+        0.375,
+        1.625
+      ],
+      "size": [
+        1.5,
+        2.5,
+        76.875
+      ]
+    },
+    {
+      "name": "Bottom plate",
+      "assembly": "back",
+      "material": "lumber",
+      "origin": [
+        0.375,
+        99.495,
+        0.125
+      ],
+      "size": [
+        53.62,
+        2.5,
+        1.5
+      ]
+    },
+    {
+      "name": "Sill capillary break",
+      "assembly": "back",
+      "material": "isolation pad",
+      "origin": [
+        0.375,
+        99.495,
+        0
+      ],
+      "size": [
+        53.62,
+        2.5,
+        0.125
+      ]
+    },
+    {
+      "name": "Top plate",
+      "assembly": "back",
+      "material": "lumber",
+      "origin": [
+        0.375,
+        99.495,
+        78.5
+      ],
+      "size": [
+        53.62,
+        2.5,
+        1.5
+      ]
+    },
+    {
+      "name": "Wall stud",
+      "assembly": "back",
+      "material": "lumber",
+      "origin": [
+        0.375,
+        99.495,
+        1.625
+      ],
+      "size": [
+        1.5,
+        2.5,
+        76.875
+      ]
+    },
+    {
+      "name": "Wall stud",
+      "assembly": "back",
+      "material": "lumber",
+      "origin": [
+        17.74833333333333,
+        99.495,
+        1.625
+      ],
+      "size": [
+        1.5,
+        2.5,
+        76.875
+      ]
+    },
+    {
+      "name": "Wall stud",
+      "assembly": "back",
+      "material": "lumber",
+      "origin": [
+        35.12166666666666,
+        99.495,
+        1.625
+      ],
+      "size": [
+        1.5,
+        2.5,
+        76.875
+      ]
+    },
+    {
+      "name": "Wall stud",
+      "assembly": "back",
+      "material": "lumber",
+      "origin": [
+        52.495,
+        99.495,
+        1.625
+      ],
+      "size": [
+        1.5,
+        2.5,
+        76.875
+      ]
+    },
+    {
+      "name": "Bottom plate",
+      "assembly": "left",
+      "material": "lumber",
+      "origin": [
+        0.375,
+        2.875,
+        0.125
+      ],
+      "size": [
+        2.5,
+        96.62,
+        1.5
+      ]
+    },
+    {
+      "name": "Sill capillary break",
+      "assembly": "left",
+      "material": "isolation pad",
+      "origin": [
+        0.375,
+        2.875,
+        0
+      ],
+      "size": [
+        2.5,
+        96.62,
+        0.125
+      ]
+    },
+    {
+      "name": "Top plate",
+      "assembly": "left",
+      "material": "lumber",
+      "origin": [
+        0.375,
+        2.875,
+        78.5
+      ],
+      "size": [
+        2.5,
+        96.62,
+        1.5
+      ]
+    },
+    {
+      "name": "Wall stud",
+      "assembly": "left",
+      "material": "lumber",
+      "origin": [
+        0.375,
+        2.875,
+        1.625
+      ],
+      "size": [
+        2.5,
+        1.5,
+        76.875
+      ]
+    },
+    {
+      "name": "Wall stud",
+      "assembly": "left",
+      "material": "lumber",
+      "origin": [
+        0.375,
+        26.655,
+        1.625
+      ],
+      "size": [
+        2.5,
+        1.5,
+        76.875
+      ]
+    },
+    {
+      "name": "Wall stud",
+      "assembly": "left",
+      "material": "lumber",
+      "origin": [
+        0.375,
+        50.435,
+        1.625
+      ],
+      "size": [
+        2.5,
+        1.5,
+        76.875
+      ]
+    },
+    {
+      "name": "Wall stud",
+      "assembly": "left",
+      "material": "lumber",
+      "origin": [
+        0.375,
+        74.215,
+        1.625
+      ],
+      "size": [
+        2.5,
+        1.5,
+        76.875
+      ]
+    },
+    {
+      "name": "Wall stud",
+      "assembly": "left",
+      "material": "lumber",
+      "origin": [
+        0.375,
+        97.995,
+        1.625
+      ],
+      "size": [
+        2.5,
+        1.5,
+        76.875
+      ]
+    },
+    {
+      "name": "Bottom plate",
+      "assembly": "right",
+      "material": "lumber",
+      "origin": [
+        51.495,
+        2.875,
+        0.125
+      ],
+      "size": [
+        2.5,
+        96.62,
+        1.5
+      ]
+    },
+    {
+      "name": "Sill capillary break",
+      "assembly": "right",
+      "material": "isolation pad",
+      "origin": [
+        51.495,
+        2.875,
+        0
+      ],
+      "size": [
+        2.5,
+        96.62,
+        0.125
+      ]
+    },
+    {
+      "name": "Top plate",
+      "assembly": "right",
+      "material": "lumber",
+      "origin": [
+        51.495,
+        2.875,
+        78.5
+      ],
+      "size": [
+        2.5,
+        96.62,
+        1.5
+      ]
+    },
+    {
+      "name": "Wall stud",
+      "assembly": "right",
+      "material": "lumber",
+      "origin": [
+        51.495,
+        2.875,
+        1.625
+      ],
+      "size": [
+        2.5,
+        1.5,
+        76.875
+      ]
+    },
+    {
+      "name": "Wall stud",
+      "assembly": "right",
+      "material": "lumber",
+      "origin": [
+        51.495,
+        26.655,
+        1.625
+      ],
+      "size": [
+        2.5,
+        1.5,
+        76.875
+      ]
+    },
+    {
+      "name": "Wall stud",
+      "assembly": "right",
+      "material": "lumber",
+      "origin": [
+        51.495,
+        50.435,
+        1.625
+      ],
+      "size": [
+        2.5,
+        1.5,
+        76.875
+      ]
+    },
+    {
+      "name": "Wall stud",
+      "assembly": "right",
+      "material": "lumber",
+      "origin": [
+        51.495,
+        74.215,
+        1.625
+      ],
+      "size": [
+        2.5,
+        1.5,
+        76.875
+      ]
+    },
+    {
+      "name": "Wall stud",
+      "assembly": "right",
+      "material": "lumber",
+      "origin": [
+        51.495,
+        97.995,
+        1.625
+      ],
+      "size": [
+        2.5,
+        1.5,
+        76.875
+      ]
+    },
+    {
+      "name": "left plywood",
+      "assembly": "left",
+      "material": "plywood",
+      "origin": [
+        0,
+        0,
+        0.125
+      ],
+      "size": [
+        0.375,
+        102.37,
+        79.875
+      ]
+    },
+    {
+      "name": "right plywood",
+      "assembly": "right",
+      "material": "plywood",
+      "origin": [
+        53.995,
+        0,
+        0.125
+      ],
+      "size": [
+        0.375,
+        102.37,
+        79.875
+      ]
+    },
+    {
+      "name": "Front left plywood",
+      "assembly": "front",
+      "material": "plywood",
+      "origin": [
+        0.375,
+        0,
+        0.125
+      ],
+      "size": [
+        12.809999999999999,
+        0.375,
+        79.875
+      ]
+    },
+    {
+      "name": "Front right plywood",
+      "assembly": "front",
+      "material": "plywood",
+      "origin": [
+        41.185,
+        0,
+        0.125
+      ],
+      "size": [
+        12.809999999999995,
+        0.375,
+        79.875
+      ]
+    },
+    {
+      "name": "Front overdoor plywood",
+      "assembly": "front",
+      "material": "plywood",
+      "origin": [
+        13.184999999999999,
+        0,
+        71.54
+      ],
+      "size": [
+        28.0,
+        0.375,
+        8.459999999999994
+      ]
+    },
+    {
+      "name": "back plywood",
+      "assembly": "back",
+      "material": "plywood",
+      "origin": [
+        0.375,
+        101.995,
+        0.125
+      ],
+      "size": [
+        53.62,
+        0.375,
+        79.875
+      ]
+    },
+    {
+      "name": "left substrate",
+      "assembly": "left",
+      "material": "substrate",
+      "origin": [
+        2.875,
+        2.875,
+        0.125
+      ],
+      "size": [
+        0.25,
+        96.62,
+        79.875
+      ]
+    },
+    {
+      "name": "right substrate",
+      "assembly": "right",
+      "material": "substrate",
+      "origin": [
+        51.245,
+        2.875,
+        0.125
+      ],
+      "size": [
+        0.25,
+        96.62,
+        79.875
+      ]
+    },
+    {
+      "name": "Front left substrate",
+      "assembly": "front",
+      "material": "substrate",
+      "origin": [
+        3.125,
+        2.875,
+        0.125
+      ],
+      "size": [
+        10.059999999999999,
+        0.25,
+        79.875
+      ]
+    },
+    {
+      "name": "Front right substrate",
+      "assembly": "front",
+      "material": "substrate",
+      "origin": [
+        41.185,
+        2.875,
+        0.125
+      ],
+      "size": [
+        10.059999999999995,
+        0.25,
+        79.875
+      ]
+    },
+    {
+      "name": "Front overdoor substrate",
+      "assembly": "front",
+      "material": "substrate",
+      "origin": [
+        13.184999999999999,
+        2.875,
+        71.54
+      ],
+      "size": [
+        28.0,
+        0.25,
+        8.459999999999994
+      ]
+    },
+    {
+      "name": "back substrate",
+      "assembly": "back",
+      "material": "substrate",
+      "origin": [
+        3.125,
+        99.245,
+        0.125
+      ],
+      "size": [
+        48.12,
+        0.25,
+        79.875
+      ]
+    },
+    {
+      "name": "left liner",
+      "assembly": "left",
+      "material": "liner",
+      "origin": [
+        3.125,
+        3.125,
+        0.125
+      ],
+      "size": [
+        0.06,
+        96.12,
+        79.875
+      ]
+    },
+    {
+      "name": "right liner",
+      "assembly": "right",
+      "material": "liner",
+      "origin": [
+        51.184999999999995,
+        3.125,
+        0.125
+      ],
+      "size": [
+        0.06,
+        96.12,
+        79.875
+      ]
+    },
+    {
+      "name": "Front left liner",
+      "assembly": "front",
+      "material": "liner",
+      "origin": [
+        3.185,
+        3.125,
+        0.125
+      ],
+      "size": [
+        9.999999999999998,
+        0.06,
+        79.875
+      ]
+    },
+    {
+      "name": "Front right liner",
+      "assembly": "front",
+      "material": "liner",
+      "origin": [
+        41.185,
+        3.125,
+        0.125
+      ],
+      "size": [
+        10.0,
+        0.06,
+        79.875
+      ]
+    },
+    {
+      "name": "Front overdoor liner",
+      "assembly": "front",
+      "material": "liner",
+      "origin": [
+        13.184999999999999,
+        3.125,
+        71.54
+      ],
+      "size": [
+        28.0,
+        0.06,
+        8.459999999999994
+      ]
+    },
+    {
+      "name": "back liner",
+      "assembly": "back",
+      "material": "liner",
+      "origin": [
+        3.185,
+        99.185,
+        0.125
+      ],
+      "size": [
+        48.0,
+        0.06,
+        79.875
+      ]
+    },
+    {
+      "name": "Wall cavity insulation",
+      "assembly": "front",
+      "material": "insulation",
+      "origin": [
+        1.875,
+        0.375,
+        1.625
+      ],
+      "size": [
+        8.31,
+        2.5,
+        69.915
+      ]
+    },
+    {
+      "name": "Wall cavity insulation",
+      "assembly": "front",
+      "material": "insulation",
+      "origin": [
+        1.875,
+        0.375,
+        71.54
+      ],
+      "size": [
+        8.31,
+        2.5,
+        3.5
+      ]
+    },
+    {
+      "name": "Wall cavity insulation",
+      "assembly": "front",
+      "material": "insulation",
+      "origin": [
+        1.875,
+        0.375,
+        75.04
+      ],
+      "size": [
+        8.31,
+        2.5,
+        3.4599999999999937
+      ]
+    },
+    {
+      "name": "Wall cavity insulation",
+      "assembly": "front",
+      "material": "insulation",
+      "origin": [
+        13.185,
+        0.375,
+        75.04
+      ],
+      "size": [
+        13.249999999999998,
+        2.5,
+        3.4599999999999937
+      ]
+    },
+    {
+      "name": "Wall cavity insulation",
+      "assembly": "front",
+      "material": "insulation",
+      "origin": [
+        27.935,
+        0.375,
+        75.04
+      ],
+      "size": [
+        13.250000000000004,
+        2.5,
+        3.4599999999999937
+      ]
+    },
+    {
+      "name": "Wall cavity insulation",
+      "assembly": "front",
+      "material": "insulation",
+      "origin": [
+        44.185,
+        0.375,
+        1.625
+      ],
+      "size": [
+        8.309999999999995,
+        2.5,
+        69.915
+      ]
+    },
+    {
+      "name": "Wall cavity insulation",
+      "assembly": "front",
+      "material": "insulation",
+      "origin": [
+        44.185,
+        0.375,
+        71.54
+      ],
+      "size": [
+        8.309999999999995,
+        2.5,
+        3.5
+      ]
+    },
+    {
+      "name": "Wall cavity insulation",
+      "assembly": "front",
+      "material": "insulation",
+      "origin": [
+        44.185,
+        0.375,
+        75.04
+      ],
+      "size": [
+        8.309999999999995,
+        2.5,
+        3.4599999999999937
+      ]
+    },
+    {
+      "name": "Wall cavity insulation",
+      "assembly": "back",
+      "material": "insulation",
+      "origin": [
+        1.875,
+        99.495,
+        1.625
+      ],
+      "size": [
+        15.873333330000001,
+        2.5,
+        76.875
+      ]
+    },
+    {
+      "name": "Wall cavity insulation",
+      "assembly": "back",
+      "material": "insulation",
+      "origin": [
+        19.24833333,
+        99.495,
+        1.625
+      ],
+      "size": [
+        15.873333340000002,
+        2.5,
+        76.875
+      ]
+    },
+    {
+      "name": "Wall cavity insulation",
+      "assembly": "back",
+      "material": "insulation",
+      "origin": [
+        36.62166667,
+        99.495,
+        1.625
+      ],
+      "size": [
+        15.873333329999994,
+        2.5,
+        76.875
+      ]
+    },
+    {
+      "name": "Wall cavity insulation",
+      "assembly": "left",
+      "material": "insulation",
+      "origin": [
+        0.375,
+        4.375,
+        1.625
+      ],
+      "size": [
+        2.5,
+        22.28,
+        76.875
+      ]
+    },
+    {
+      "name": "Wall cavity insulation",
+      "assembly": "left",
+      "material": "insulation",
+      "origin": [
+        0.375,
+        28.155,
+        1.625
+      ],
+      "size": [
+        2.5,
+        22.28,
+        76.875
+      ]
+    },
+    {
+      "name": "Wall cavity insulation",
+      "assembly": "left",
+      "material": "insulation",
+      "origin": [
+        0.375,
+        51.935,
+        1.625
+      ],
+      "size": [
+        2.5,
+        22.28,
+        76.875
+      ]
+    },
+    {
+      "name": "Wall cavity insulation",
+      "assembly": "left",
+      "material": "insulation",
+      "origin": [
+        0.375,
+        75.715,
+        1.625
+      ],
+      "size": [
+        2.5,
+        22.28,
+        76.875
+      ]
+    },
+    {
+      "name": "Wall cavity insulation",
+      "assembly": "right",
+      "material": "insulation",
+      "origin": [
+        51.495,
+        4.375,
+        1.625
+      ],
+      "size": [
+        2.5,
+        22.28,
+        76.875
+      ]
+    },
+    {
+      "name": "Wall cavity insulation",
+      "assembly": "right",
+      "material": "insulation",
+      "origin": [
+        51.495,
+        28.155,
+        1.625
+      ],
+      "size": [
+        2.5,
+        22.28,
+        76.875
+      ]
+    },
+    {
+      "name": "Wall cavity insulation",
+      "assembly": "right",
+      "material": "insulation",
+      "origin": [
+        51.495,
+        51.935,
+        1.625
+      ],
+      "size": [
+        2.5,
+        22.28,
+        76.875
+      ]
+    },
+    {
+      "name": "Wall cavity insulation",
+      "assembly": "right",
+      "material": "insulation",
+      "origin": [
+        51.495,
+        75.715,
+        1.625
+      ],
+      "size": [
+        2.5,
+        22.28,
+        76.875
+      ]
+    },
+    {
+      "name": "Ceiling liner",
+      "assembly": "roof",
+      "material": "liner",
+      "origin": [
+        3.185,
+        3.185,
+        79.44
+      ],
+      "size": [
+        48.0,
+        96.0,
+        0.06
+      ]
+    },
+    {
+      "name": "Ceiling substrate",
+      "assembly": "roof",
+      "material": "substrate",
+      "origin": [
+        3.185,
+        3.185,
+        79.5
+      ],
+      "size": [
+        48.0,
+        96.0,
+        0.5
+      ]
+    },
+    {
+      "name": "Roof end member",
+      "assembly": "roof",
+      "material": "lumber",
+      "origin": [
+        0.375,
+        0.375,
+        80.0
+      ],
+      "size": [
+        53.62,
+        1.5,
+        3.5
+      ]
+    },
+    {
+      "name": "Light-support crossmember 1",
+      "assembly": "roof",
+      "material": "lumber",
+      "origin": [
+        0.375,
+        26.655,
+        80.0
+      ],
+      "size": [
+        53.62,
+        1.5,
+        3.5
+      ]
+    },
+    {
+      "name": "Light-support crossmember 2",
+      "assembly": "roof",
+      "material": "lumber",
+      "origin": [
+        0.375,
+        50.435,
+        80.0
+      ],
+      "size": [
+        53.62,
+        1.5,
+        3.5
+      ]
+    },
+    {
+      "name": "Light-support crossmember 3",
+      "assembly": "roof",
+      "material": "lumber",
+      "origin": [
+        0.375,
+        74.215,
+        80.0
+      ],
+      "size": [
+        53.62,
+        1.5,
+        3.5
+      ]
+    },
+    {
+      "name": "Roof end member",
+      "assembly": "roof",
+      "material": "lumber",
+      "origin": [
+        0.375,
+        100.495,
+        80.0
+      ],
+      "size": [
+        53.62,
+        1.5,
+        3.5
+      ]
+    },
+    {
+      "name": "Roof side rim segment",
+      "assembly": "roof",
+      "material": "lumber",
+      "origin": [
+        0.375,
+        1.875,
+        80.0
+      ],
+      "size": [
+        1.5,
+        24.78,
+        3.5
+      ]
+    },
+    {
+      "name": "Roof side rim segment",
+      "assembly": "roof",
+      "material": "lumber",
+      "origin": [
+        52.495,
+        1.875,
+        80.0
+      ],
+      "size": [
+        1.5,
+        24.78,
+        3.5
+      ]
+    },
+    {
+      "name": "Roof cavity insulation",
+      "assembly": "roof",
+      "material": "insulation",
+      "origin": [
+        1.875,
+        1.875,
+        80.0
+      ],
+      "size": [
+        50.62,
+        24.78,
+        3.5
+      ]
+    },
+    {
+      "name": "Roof side rim segment",
+      "assembly": "roof",
+      "material": "lumber",
+      "origin": [
+        0.375,
+        28.155,
+        80.0
+      ],
+      "size": [
+        1.5,
+        22.28,
+        3.5
+      ]
+    },
+    {
+      "name": "Roof side rim segment",
+      "assembly": "roof",
+      "material": "lumber",
+      "origin": [
+        52.495,
+        28.155,
+        80.0
+      ],
+      "size": [
+        1.5,
+        22.28,
+        3.5
+      ]
+    },
+    {
+      "name": "Roof cavity insulation",
+      "assembly": "roof",
+      "material": "insulation",
+      "origin": [
+        1.875,
+        28.155,
+        80.0
+      ],
+      "size": [
+        50.62,
+        22.28,
+        3.5
+      ]
+    },
+    {
+      "name": "Roof side rim segment",
+      "assembly": "roof",
+      "material": "lumber",
+      "origin": [
+        0.375,
+        51.935,
+        80.0
+      ],
+      "size": [
+        1.5,
+        22.28,
+        3.5
+      ]
+    },
+    {
+      "name": "Roof side rim segment",
+      "assembly": "roof",
+      "material": "lumber",
+      "origin": [
+        52.495,
+        51.935,
+        80.0
+      ],
+      "size": [
+        1.5,
+        22.28,
+        3.5
+      ]
+    },
+    {
+      "name": "Roof cavity insulation",
+      "assembly": "roof",
+      "material": "insulation",
+      "origin": [
+        1.875,
+        51.935,
+        80.0
+      ],
+      "size": [
+        50.62,
+        22.28,
+        3.5
+      ]
+    },
+    {
+      "name": "Roof side rim segment",
+      "assembly": "roof",
+      "material": "lumber",
+      "origin": [
+        0.375,
+        75.715,
+        80.0
+      ],
+      "size": [
+        1.5,
+        24.78,
+        3.5
+      ]
+    },
+    {
+      "name": "Roof side rim segment",
+      "assembly": "roof",
+      "material": "lumber",
+      "origin": [
+        52.495,
+        75.715,
+        80.0
+      ],
+      "size": [
+        1.5,
+        24.78,
+        3.5
+      ]
+    },
+    {
+      "name": "Roof cavity insulation",
+      "assembly": "roof",
+      "material": "insulation",
+      "origin": [
+        1.875,
+        75.715,
+        80.0
+      ],
+      "size": [
+        50.62,
+        24.78,
+        3.5
+      ]
+    },
+    {
+      "name": "Roof cap",
+      "assembly": "roof",
+      "material": "plywood",
+      "origin": [
+        0,
+        0,
+        83.5
+      ],
+      "size": [
+        54.37,
+        102.37,
+        0.5
+      ]
+    },
+    {
+      "name": "Door plywood",
+      "assembly": "door",
+      "material": "plywood",
+      "origin": [
+        13.309999999999999,
+        0,
+        3.665
+      ],
+      "size": [
+        27.75,
+        0.375,
+        67.75
+      ]
+    },
+    {
+      "name": "Door substrate",
+      "assembly": "door",
+      "material": "substrate",
+      "origin": [
+        13.309999999999999,
+        2.875,
+        3.665
+      ],
+      "size": [
+        27.75,
+        0.25,
+        67.75
+      ]
+    },
+    {
+      "name": "Door liner",
+      "assembly": "door",
+      "material": "liner",
+      "origin": [
+        13.309999999999999,
+        3.125,
+        3.665
+      ],
+      "size": [
+        27.75,
+        0.06,
+        67.75
+      ]
+    },
+    {
+      "name": "Door stile",
+      "assembly": "door",
+      "material": "lumber",
+      "origin": [
+        13.309999999999999,
+        0.375,
+        3.665
+      ],
+      "size": [
+        1.5,
+        2.5,
+        67.75
+      ]
+    },
+    {
+      "name": "Door stile",
+      "assembly": "door",
+      "material": "lumber",
+      "origin": [
+        39.56,
+        0.375,
+        3.665
+      ],
+      "size": [
+        1.5,
+        2.5,
+        67.75
+      ]
+    },
+    {
+      "name": "Door rail",
+      "assembly": "door",
+      "material": "lumber",
+      "origin": [
+        14.809999999999999,
+        0.375,
+        3.665
+      ],
+      "size": [
+        24.75,
+        2.5,
+        1.5
+      ]
+    },
+    {
+      "name": "Door rail",
+      "assembly": "door",
+      "material": "lumber",
+      "origin": [
+        14.809999999999999,
+        0.375,
+        69.915
+      ],
+      "size": [
+        24.75,
+        2.5,
+        1.5
+      ]
+    },
+    {
+      "name": "Door insulation",
+      "assembly": "door",
+      "material": "insulation",
+      "origin": [
+        14.809999999999999,
+        0.375,
+        5.165
+      ],
+      "size": [
+        24.75,
+        2.5,
+        64.75
+      ]
+    }
+  ]
+}
