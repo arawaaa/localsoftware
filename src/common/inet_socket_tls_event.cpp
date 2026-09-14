@@ -12,10 +12,12 @@
 #include "io_event.cpp"
 #include "io_uring_manager.cpp"
 
-#define MAXFRAMELENGTH (size_t)16384
+#define MAXFRAMELENGTH (size_t)(16 * 1024)
 #define MAXUFRAMELENGTH (size_t)(16384 - 1024) // little bit of margin
 
 using namespace std;
+
+extern thread_local AllocatorWrapper alloc;
 
 // Ossl callbacks
 
@@ -64,6 +66,14 @@ public:
     {
         i<InetSocketReadWriteEventBytes>(files_);
         openssl_setup();
+
+        e_read_ = static_cast<char*>(alloc.bmalloc(1));
+        e_write_ = static_cast<char*>(alloc.bmalloc(1));
+    }
+
+    ~InetSocketTLSEvent() {
+        alloc.bfree(e_read_);
+        alloc.bfree(e_write_);
     }
 
     void openssl_setup() {
@@ -153,7 +163,7 @@ protected:
     BIO *writebuf_, *readbuf_;
     // The write function will take care of the entire buffer
     size_t e_writelen_;
-    char e_read_[MAXFRAMELENGTH], e_write_[MAXFRAMELENGTH];
+    char* e_read_, *e_write_;
     size_t e_read_s_ = 0, e_write_s_ = 0;
     TLSState state_;
 

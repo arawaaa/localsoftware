@@ -7,14 +7,15 @@
 #include <unordered_set>
 #include <unordered_map>
 #include <vector>
+#include <iostream>
 #include <sys/mman.h>
 
 using namespace std;
 
-class AllocatorWrappr {
-    static constexpr size_t BLOCK_SIZE = 16 * 1024;
+class AllocatorWrapper {
+    static constexpr size_t BLOCK_SIZE_MMAP = 16 * 1024;
     static constexpr size_t BLOCKS_IN_ARENA = 64;
-    static constexpr size_t ARENA_SIZE = BLOCK_SIZE * BLOCKS_IN_ARENA;
+    static constexpr size_t ARENA_SIZE = BLOCK_SIZE_MMAP * BLOCKS_IN_ARENA;
 
     struct SegmentInfo {
         unsigned int length : 7 = 0;
@@ -24,14 +25,12 @@ class AllocatorWrappr {
     };
     list<void*> arenas_;
     unordered_map<void*, size_t> custom_arenas_;
-    int num_empty_arenas_;
     unordered_map<void*, pair<size_t, array<SegmentInfo, BLOCKS_IN_ARENA>>> segment_info_;
 
 public:
-    AllocatorWrappr() {
+    AllocatorWrapper() {
         // Initialize an arena
-        void* arena = mmap(nullptr, ARENA_SIZE, PROT_WRITE | PROT_READ, MAP_ANONYMOUS, -1, 0);
-        arenas_.push_back(arena);
+        add_arena();
     }
 
     void* bmalloc(unsigned num) {
@@ -40,49 +39,56 @@ public:
         }
 
         for (void* arena : arenas_) {
-            if (custom_arenas_.contains(arena) || segment_info_[arena].first < num) continue;
+            if (custom_arenas_.contains(arena) /*|| segment_info_[arena].first < num*/) continue;
 
             auto& arr = segment_info_[arena].second;
             int found_block = -1;
+            unsigned int maxsize_excluding_pick = 0;
             for (size_t i = 0; i < arr.size(); i += arr[i].length) {
                 auto& segment = arr[i];
                 if (!(segment.interior || segment.occupied) && segment.length >= num) {
                     found_block = i;
-
-                    if (segment.length == num && i + segment.length < arr.size()) {
-                        arr[i + segment.length].back = i;
-                    } else if (segment.length > num) {
-                        // Subdivide block, the following block (if any) will be occupied by induction
-                        arr[i + num] = SegmentInfo {
-                            .length = segment.length - num,
-                            .back = static_cast<unsigned int>(i),
-                            .occupied = false,
-                            .interior = false
-                        };
-                        if (i + segment.length < arr.size())
-                            arr[i + segment.length].back = i + num;
-                    }
-                    segment.length = num;
-                    segment.occupied = true;
+                } else {
+                    maxsize_excluding_pick = max(maxsize_excluding_pick, segment.length);
                 }
             }
 
+            // segment_info_[arena].first = maxsize_excluding_pick;
+
             if (found_block != -1) {
-                return static_cast<char*>(arena) + found_block * BLOCK_SIZE;
+                auto& segment = arr[found_block];
+
+                if (segment.length == num && static_cast<size_t>(found_block) + segment.length < arr.size()) {
+                    arr[found_block + segment.length].back = found_block;
+                } else if (segment.length > num) {
+                    // Subdivide block, the following block (if any) will be occupied by induction
+                    arr[found_block + num] = SegmentInfo {
+                        .length = segment.length - num,
+                        .back = static_cast<unsigned int>(found_block),
+                        .occupied = false,
+                        .interior = false
+                    };
+                    if (static_cast<size_t>(found_block) + segment.length < arr.size())
+                        arr[found_block + segment.length].back = found_block + num;
+                }
+                segment.length = num;
+                segment.occupied = true;
+
+                return static_cast<char*>(arena) + static_cast<size_t>(found_block) * BLOCK_SIZE_MMAP;
             }
         }
 
         void* new_arena = add_arena();
-        if (num < BLOCKS_IN_ARENA) {
-            segment_info_[new_arena].second[num] = SegmentInfo {
-                .length = static_cast<unsigned int>(BLOCKS_IN_ARENA - num),
-                .back = 0,
-                .occupied = false,
-                .interior = false
-            };
+        if (num <= BLOCKS_IN_ARENA) {
+            segment_info_[new_arena].second[0].occupied = true;
+            segment_info_[new_arena].second[0].length = num;
+            if (num < BLOCKS_IN_ARENA) {
+                segment_info_[new_arena].second[num].occupied = false;
+                segment_info_[new_arena].second[num].interior = false;
+                segment_info_[new_arena].second[num].back = 0;
+                segment_info_[new_arena].second[num].length = BLOCKS_IN_ARENA - num;
+            }
         }
-        segment_info_[new_arena].second[0].occupied = true;
-        segment_info_[new_arena].second[0].length = num;
         return new_arena;
     }
 
@@ -90,14 +96,14 @@ public:
         if (custom_arenas_.contains(p)) {
             arenas_.remove(p);
             // Immediately unmap, with the assumption that allocations this large will be used for long-running purposes
-            munmap(p, custom_arenas_[p] * BLOCK_SIZE);
+            munmap(p, custom_arenas_[p] * BLOCK_SIZE_MMAP);
             custom_arenas_.erase(p);
             return;
         }
 
         for (void* arena : arenas_ | views::reverse) {
-            if (p > arena) {
-                size_t position = (reinterpret_cast<uint64_t>(p) - reinterpret_cast<uint64_t>(arena)) / BLOCK_SIZE;
+            if (p >= arena) {
+                size_t position = (reinterpret_cast<uint64_t>(p) - reinterpret_cast<uint64_t>(arena)) / BLOCK_SIZE_MMAP;
                 auto& arr = segment_info_[arena].second;
                 auto back = arr[position].back;
                 auto forward = position + arr[position].length;
@@ -121,29 +127,38 @@ public:
                         arr[next_in_line].back = position;
                 }
 
-                if (!arr[0].occupied && arr[0].length == BLOCKS_IN_ARENA) {
-                    num_empty_arenas_++;
-
-                    if (num_empty_arenas_ > 2) {
-                        arenas_.remove(arena);
-                        segment_info_.erase(arena);
-                        munmap(arena, BLOCKS_IN_ARENA * BLOCK_SIZE);
-                        num_empty_arenas_--;
-                    }
+                if (!arr[0].occupied && arr[0].length == BLOCKS_IN_ARENA && arenas_.size() > 3) {
+                    arenas_.remove(arena);
+                    segment_info_.erase(arena);
+                    munmap(arena, BLOCKS_IN_ARENA * BLOCK_SIZE_MMAP);
                 }
+                return;
             }
         }
     }
 
+    // TODO implement
+    void brealloc() {
+
+    }
+
 private:
     void* add_arena(unsigned num = BLOCKS_IN_ARENA) {
-        void* arena = mmap(nullptr, num * BLOCK_SIZE, PROT_WRITE | PROT_READ, MAP_ANONYMOUS, -1, 0);
-        arenas_.insert(
-            find_if(arenas_.begin(), arenas_.end(), [arena](void* p) {
-                return p > arena;
-            }),
-            arena);
-        if (num > BLOCKS_IN_ARENA) {
+        void* arena = mmap(nullptr, num * BLOCK_SIZE_MMAP, PROT_WRITE | PROT_READ, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+        if (num <= BLOCKS_IN_ARENA) {
+            arenas_.insert(
+                find_if(arenas_.begin(), arenas_.end(), [arena](void* p) {
+                    return p > arena;
+                }),
+                arena);
+            segment_info_[arena].first = num;
+            segment_info_[arena].second[0] = SegmentInfo {
+                .length = num,
+                .back = 0,
+                .occupied = false,
+                .interior = false
+            };
+        } else {
             custom_arenas_.emplace(arena, num);
         }
         return arena;

@@ -7,13 +7,13 @@ const experienceData = [
     subtitle: "Allstate | May 2026 - Present",
     bullets: [
       'Working with Spring Boot to create and maintain REST services',
-      'Maintaining a large microservices codebase',
-      'Agile development'
+      'Maintaining a large microservices codebase split across multiple teams',
+      'Using Mongo and Kafka'
     ]
   },
   {
     title: 'Mechanistic Interpretability',
-    subtitle: 'Independent Study | June 2025 – Present (Hobby)',
+    subtitle: 'Independent Study | June 2025 – August 2025',
     bullets: [
       'Exploring advanced AI safety through techniques like Activation Patching and Linear Probes.',
       'Conducting experiments on local models involving ablation and token prefill.',
@@ -31,7 +31,7 @@ const experienceData = [
   },
   {
     title: 'KDE Contributor',
-    subtitle: 'Open Source | 2022 – Present',
+    subtitle: 'Open Source | 2022 – 2024',
     bullets: [
       'Collaborating with global developers on code development.',
       'Reviewing high-impact Open Source Linux applications.',

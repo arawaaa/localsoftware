@@ -3,15 +3,6 @@ import { Card, CardContent, Typography, Container, Box, Stack } from '@mui/mater
 
 const projectData = [
   {
-    title: 'Agent With Retrieval',
-    tech: 'OpenAI, Vector Databases, Structured Outputs, React',
-    bullets: [
-      'Built for retrieval across a large input corpus, through embeddings, clustering and linear operations in the latent space.',
-      'Interaction through a React interface, utilizing structured outputs for multiple use cases, including storytelling and programming.',
-      'Exploratory work on fine-tuning for optimizing subjective criteria.'
-    ],
-  },
-  {
     title: 'Uniform Job Scheduler',
     tech: 'Formal specification, Docker, Operational Research',
     bullets: [
@@ -23,11 +14,10 @@ const projectData = [
     title: 'IO_URING Webserver & Logger (Serves this website)',
     tech: 'C++20, io_uring, OpenSSL, Google Compute Engine, Linux Systems',
     bullets: [
-      'Contains a high-performance HTTP server with TLS implementation, and an extensible backend for future protocols (FTP).',
-      'Leverages the asynchronous io_uring Linux system call to handle multiple clients efficiently from a single-threaded event loop.',
-      'Logs and analyzes traffic traversing a WiFi-Ethernet bridge colocated with the server.',
-      'Utilizes Google Compute Engine for external communication and secure tunneling.',
-      '(June 2026) Limited multithreading support, with autoscaling on the horizon'
+      'A performant event-driven webserver, with an extensible backed for additional protocols (e.g. FTP)',
+      'Leverages the asynchronous io_uring Linux system call to handle multiple clients efficiently from per-thread event loops',
+      'Logs and captures bandwidth metrics for a bridge colocated with the server.',
+      'Utilizes Google Compute Engine for external communication and secure tunneling'
     ],
   },
   {

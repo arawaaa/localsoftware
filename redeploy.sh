@@ -37,8 +37,8 @@ scp -r localsoftware \
     config/99-update-dnsmasq-relay \
     frontend/build/client \
     ondevicedeploy.fish \
-    ls-lp:~/
+    ls-lp-local:~/
 
 # Deploy and restart
-ssh ls-lp "sudo fish ondevicedeploy.fish"
-ssh ls-lp "cd lsoft; and git pull"
+ssh ls-lp-local "sudo fish ondevicedeploy.fish"
+ssh ls-lp-local "cd lsoft; and git pull"

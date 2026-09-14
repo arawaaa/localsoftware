@@ -10,10 +10,12 @@
 #include "defs.cpp"
 #include "async_thread_shared.cpp"
 #include "io_event.cpp"
+#include "alloc/alloc_wrapper.cpp"
 
 using namespace std;
 
 thread_local shared_ptr<IoUringData> context;
+thread_local AllocatorWrapper alloc;
 
 // Badly designed class; we should record within the event class
 // Causes event implementation methods to be defined in this file

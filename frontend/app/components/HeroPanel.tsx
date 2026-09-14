@@ -30,7 +30,7 @@ const HeroPanel = () => {
                   Arnav Rawat
                 </Typography>
                 <Typography variant="h5" paragraph sx={{ opacity: 0.9, color: 'text.secondary' }}>
-                  Software Engineer | ML Practictioner | UIUC Alum
+                  Software Engineer | UIUC Alum
                 </Typography>
                 <Stack
                   sx={{ pt: 2 }}
@@ -47,10 +47,9 @@ const HeroPanel = () => {
               </Box>
               <Box sx={{ flex: 0.8, borderLeft: '4px solid #90caf9', pl: 3 }}>
                 <Typography variant="body1" sx={{ fontSize: '1.1rem', lineHeight: 1.8, opacity: 0.9, color: 'text.secondary' }}>
-                  I'm a natural general intelligence currently living in the <strong style={{ color: '#fff' }}>Chicagoland area</strong>.
+                  I'm a software engineer currently living in the <strong style={{ color: '#fff' }}>Chicagoland area</strong>.
                   A Computer Science and Mathematics graduate from the <strong style={{ color: '#fff' }}>University of Illinois Urbana-Champaign</strong>, 
-                  I specialize in building scalable software, optimizing algorithms, and exploring the depths of <strong style={{ color: '#fff' }}>Mechanistic Interpretability </strong>
-                  to ensure we can flourish and exist peacefully with our machine peers.
+                  I enjoy creating well-architected applications, creating and using machine learning tools, as well as formal mathematics.
                 </Typography>
               </Box>
             </Stack>
