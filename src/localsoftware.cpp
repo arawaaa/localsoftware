@@ -7,6 +7,7 @@
 #include <cstring>
 #include <cmath>
 #include <ctime>
+#include <chrono>
 #include <iomanip>
 #include <unistd.h>
 #include <sys/socket.h>
@@ -201,12 +202,9 @@ int main() {
     unsigned long long rx_prev = read_bytes(RX_FILE);
     unsigned long long tx_prev = read_bytes(TX_FILE);
     
-    time_t now = time(nullptr);
-    struct tm *t = localtime(&now);
-    int cur_hour = t->tm_hour;
-    int cur_mday = t->tm_mday;
-    int cur_mon = t->tm_mon + 1;
-    int cur_year = t->tm_year + 1900;
+    chrono::zoned_time prev_time {chrono::current_zone(), chrono::system_clock::now()};
+    chrono::year_month_day prev(chrono::floor<chrono::days>(prev_time.get_local_time()));
+    chrono::hh_mm_ss prev_hms(prev_time.get_local_time() - chrono::floor<chrono::days>(prev_time.get_local_time()));
 
     unsigned long long hourly_rx = 0;
     unsigned long long hourly_tx = 0;
@@ -237,24 +235,36 @@ int main() {
         rx_prev = rx_curr;
         tx_prev = tx_curr;
 
-        now = time(nullptr);
-        t = localtime(&now);
+        chrono::zoned_time now_time {chrono::current_zone(), chrono::system_clock::now()};
+        chrono::year_month_day now(chrono::floor<chrono::days>(now_time.get_local_time()));
+        chrono::hh_mm_ss now_hms(now_time.get_local_time() - chrono::floor<chrono::days>(now_time.get_local_time()));
 
-        if (t->tm_hour != cur_hour) {
-            log_entry(now, cur_mday, cur_mon, cur_year, cur_hour, hourly_tx, hourly_rx);
+        if (now_hms.hours() != prev_hms.hours()) {
+            log_entry(now_time.get_local_time().time_since_epoch().count(),
+                      static_cast<unsigned>(now.day()),
+                      static_cast<unsigned>(now.month()),
+                      static_cast<int>(now.year()),
+                      now_hms.hours().count(),
+                      hourly_tx,
+                      hourly_rx);
             hourly_rx = 0;
             hourly_tx = 0;
 
-            if (t->tm_mday != cur_mday) {
-                log_entry(now, cur_mday, cur_mon, cur_year, 24, daily_tx, daily_rx);
+            if (static_cast<unsigned>(prev.day()) != static_cast<unsigned>(now.day())) {
+                log_entry(now_time.get_local_time().time_since_epoch().count(),
+                      static_cast<unsigned>(now.day()),
+                      static_cast<unsigned>(now.month()),
+                      static_cast<int>(now.year()),
+                      now_hms.hours().count(),
+                      daily_tx,
+                      daily_rx);
                 daily_rx = 0;
                 daily_tx = 0;
-
-                cur_mday = t->tm_mday;
-                cur_mon = t->tm_mon + 1;
-                cur_year = t->tm_year + 1900;
             }
-            cur_hour = t->tm_hour;
+
+            prev_time = now_time;
+            prev = now;
+            prev_hms = now_hms;
         }
     }
 

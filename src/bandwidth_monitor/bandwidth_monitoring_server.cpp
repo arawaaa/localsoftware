@@ -149,6 +149,7 @@ private:
             long long ts; int d, m, y, h; unsigned long long tx, rx;
             if (sscanf(line.c_str(), "[%lld] %d/%d/%d %d %llu %llu", &ts, &d, &m, &y, &h, &tx, &rx) == 7) {
                 LogRecord rec = {(uint64_t)ts, (uint64_t)tx, (uint64_t)rx, (uint32_t)h};
+
                 chunk_data.append(reinterpret_cast<const char*>(&rec), sizeof(rec));
                 count++;
             }
@@ -158,7 +159,7 @@ private:
             c(&WebsocketEvent::write_frame, (char*)marker, sizeof(marker));
             current_op_ = WebsocketLive;
         } else {
-            c(&WebsocketEvent::write_frame, chunk_data.data(), chunk_data.size());
+            c(&WebsocketEvent::write_frame2, chunk_data);
         }
     }
 
@@ -174,13 +175,13 @@ private:
                 tx = static_cast<uint64_t>(global_tx_speed);
             }
 
-            time_t now = time(nullptr);
-            struct tm *t = localtime(&now);
+            chrono::zoned_time now_time {chrono::current_zone(), chrono::system_clock::now()};
+            chrono::hh_mm_ss now_hms(now_time.get_sys_time() - chrono::floor<chrono::days>(now_time.get_sys_time()));
 
-            rec.timestamp = now;
+            rec.timestamp = now_time.get_sys_time().time_since_epoch().count();
             rec.rx_bytes = rx;
             rec.tx_bytes = tx;
-            rec.hour = t->tm_hour;
+            rec.hour = now_hms.hours().count();
 
             auto tid = c(&BandwidthDataTimerEvent::prepare_timer);
             auto wid = c(&WebsocketEvent::write_frame, (char*)&rec, sizeof(rec));

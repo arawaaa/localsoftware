@@ -114,6 +114,13 @@ export default function App() {
             >
               Network Monitor
             </Button>
+            <Button
+              color="inherit"
+              href="https://arnavrawat.xyz:9090"
+              sx={{ fontWeight: 'medium' }}
+            >
+              Cockpit
+            </Button>
           </Toolbar>
         </AppBar>
         

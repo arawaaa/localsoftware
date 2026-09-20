@@ -172,7 +172,8 @@
                         // History Records: Multiple of 28 bytes (TS:8, TX:8, RX:8, HOUR:4)
                         if (view.byteLength % 28 === 0) {
                             for (let offset = 0; offset < view.byteLength; offset += 28) {
-                                const ts = Number(view.getBigUint64(offset, true)) * 1000;
+                                console.log([...new Uint8Array(view.buffer)].map(x => x.toString(16).padStart(2, '0')).join(''))
+                                const ts = Number(view.getBigUint64(offset, true)) / 1000000;
                                 const tx = Number(view.getBigUint64(offset + 8, true));
                                 const rx = Number(view.getBigUint64(offset + 16, true));
                                 const hour = view.getUint32(offset + 24, true);
@@ -182,7 +183,7 @@
                     } else {
                         // Live Update: LogRecord format (28 bytes)
                         if (view.byteLength === 28) {
-                            const ts = Number(view.getBigUint64(0, true)) * 1000;
+                            const ts = Number(view.getBigUint64(0, true)) / 1000000;
                             const tx = Number(view.getBigUint64(8, true));
                             const rx = Number(view.getBigUint64(16, true));
                             

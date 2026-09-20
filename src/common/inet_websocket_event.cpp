@@ -29,6 +29,10 @@ public:
     virtual ~WebsocketEvent() {
         delete[] w_buf_;
     }
+
+    CallResponse write_frame2(uint64_t id, string& str) {
+        return write_frame(id, str.data(), str.size());
+    }
     /**
      * @brief Serializes an HTTP response into the write buffer and starts the write process.
      */
