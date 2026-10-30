@@ -21,7 +21,7 @@ An interesting cache, Tiny-LFU will also be implemented to optimize serving stat
 All code written after f5a178b is entirely hand-written, including all of the OpenSSL-based support for TLS.
 
 ## Compilation
-Compilation and transfer commands are in redeploy.sh. It's currently a unity build, the cmake doesn't actually work :(. I wish I could use c++ modules, but cmake doesn't support header units yet and compilation catastrophically breaks with including beast in the global module fragment. 
+Compilation and transfer commands are in redeploy.sh. Cmake is supported
 
 Dependencies required:
 - Boost.{Beast, Json}

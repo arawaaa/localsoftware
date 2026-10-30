@@ -17,11 +17,11 @@
 
 #include <openssl/sha.h>
 
-#include "common/io_uring_manager.cpp"
-#include "bandwidth_monitor/accept_event.cpp"
-#include "aio_landing/aio_landing_accepter.cpp"
+#include "async_handler.h"
+#include "bandwidth_monitor/bandwidth_accept.h"
+#include "aio_landing/landing_accept.h"
 // #include "reverse_proxy/reverse_proxy_accept.cpp"
-#include "logging/visit_stats.cpp"
+#include "visit_stats.h"
 
 using namespace std;
 
@@ -29,7 +29,7 @@ using namespace std;
 const string INTERFACE = "wlp1s0";
 const string RX_FILE = "/sys/class/net/" + INTERFACE + "/statistics/rx_bytes";
 const string TX_FILE = "/sys/class/net/" + INTERFACE + "/statistics/tx_bytes";
-const string LOG_FILE = "/var/log/localsoftware/wlan_usage.log";
+extern const string LOG_FILE = "/var/log/localsoftware/wlan_usage.log";
 constexpr int SERVER_PORT = 8443;
 constexpr int RP_PORT = 18789;
 constexpr int HTTP_PORT = 80;
@@ -166,7 +166,7 @@ void server_func() {
 
     // Setup WebSocket Accept Event
     auto ws_files = {ws_fd, ws6_fd};
-    instance.initialize_root_event<BandwidthMonitorAcceptEvent>(ws_files, true, "/srv/bwith");
+    instance.initialize_root_event<BandwidthMonitorAccept>(ws_files, true, "/srv/bwith");
 
     // Setup HTTP Landing Accept Event
     vector<shared_ptr<File>> http_files = {http_fd, http6_fd};

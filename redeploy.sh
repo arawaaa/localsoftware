@@ -1,15 +1,14 @@
 #!/bin/bash
 
-# Cross-compile
+path=""
 if [ "$1" == "o" ]; then
-    clang++ -fuse-ld=lld -Wall -Wextra -Wno-deprecated-declarations -O3 -flto \
-        -I./src -luring -ltbb -lssl -lcrypto -lpthread -latomic -lboost_json \
-        -std=c++26 src/localsoftware.cpp -o localsoftware
+    cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release
+    cmake --build build/release --parallel $(nproc --all)
+    path="build/release/src/localsoftware"
 else
-    clang++ -fuse-ld=lld -Wall -Wextra -Wno-deprecated-declarations \
-        -I./src -g -O0 -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer \
-        -luring -ltbb -lssl -lcrypto -lpthread -latomic -lboost_json \
-        -std=c++26 src/localsoftware.cpp -o localsoftware
+    cmake -S . -B build/debug -DCMAKE_BUILD_TYPE=Debug
+    cmake --build build/debug --parallel $(nproc --all)
+    path="build/debug/src/localsoftware"
 fi
 
 if [ $? -ne 0 ]; then
@@ -26,8 +25,8 @@ if [ $? -ne 0 ]; then
 fi
 cd ..
 
-# Transfer (ls-pi is a ssh alias for my server)
-scp -r localsoftware \
+# Transfer (ls-lp is a ssh alias for my server)
+scp -r $path \
     src/bandwidth_monitor/monitoringindex.html \
     src/reverse_proxy/proxyindex.html \
     src/reverse_proxy/proxy.config \

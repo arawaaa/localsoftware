@@ -3,13 +3,14 @@ target_sources(common
     PUBLIC
         file.cpp
         http_manager.cpp
-        inet_socket_read_write_event_bytes.cpp
-        inet_socket_read_write_event_http.cpp
-        inet_socket_read_write_event_httpc.cpp
-        inet_socket_tls_event.cpp
-        inet_websocket_event.cpp
-        io_event.cpp
-        io_uring_manager.cpp
+        readwrite_http.cpp
+        readwrite_bytes.cpp
+        tls_socket.cpp
+        websocket_socket.cpp
+        event.cpp
+        async_handler.cpp
+        thread_data.cpp
 )
 
-target_link_libraries(common Boost::boost)
+target_include_directories(common PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(common Boost::boost OpenSSL::SSL TBB::tbb PkgConfig::uring alloc logging)
