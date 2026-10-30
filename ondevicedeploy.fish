@@ -21,6 +21,8 @@ mv /home/arsrv/98-update-vpn /etc/NetworkManager/dispatcher.d/98-update-vpn;
 mv /home/arsrv/99-update-dnsmasq-relay /etc/NetworkManager/dispatcher.d/99-update-dnsmasq-relay;
     and chown root:root /etc/NetworkManager/dispatcher.d/99-update-dnsmasq-relay;
     and chmod +x /etc/NetworkManager/dispatcher.d/99-update-dnsmasq-relay
+mv /home/arsrv/wg0.conf /etc/wireguard/wg0.conf;
+    and chown root:root /etc/wireguard/wg0.conf
 
 mkdir -p /var/log/localsoftware;
     and chown arsrv:arsrv /var/log/localsoftware

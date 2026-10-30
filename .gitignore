@@ -11,3 +11,5 @@ home-assistant-lennox-local-https/
 .cache/
 proxy.config
 build
+wg0.conf
+wg0.nmconnection
