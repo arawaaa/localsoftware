@@ -9,10 +9,11 @@ int* p;
 
 struct task {
     struct promise_type {
-        suspend_never initial_suspend() {return {};}
-        suspend_never final_suspend() noexcept {return{};}
+        suspend_never initial_suspend() { std::cout << "Initial suspend" << std::endl; return {};}
+        suspend_never final_suspend() noexcept { std::cout << "Final suspend" << std::endl; return{};}
         void return_void() {}
         task get_return_object() {
+            std::cout << "return" << std::endl;
             return task(*this);
         }
         void unhandled_exception() {}
@@ -20,6 +21,18 @@ struct task {
 
     task(promise_type& pt) {
         h = Handle::from_promise(pt);
+    }
+
+    bool await_ready() { return true; }
+
+    void await_suspend(std::coroutine_handle<> _h)
+    {
+        std::cout << "suspend" << std::endl;
+        // return h;
+    }
+
+    void await_resume() {
+        std::cout << "resume" << std::endl;
     }
 
     void resume() {
@@ -30,29 +43,17 @@ struct task {
     Handle h;
 };
 
-auto switch_to_new_thread()
-{
-    struct awaitable
-    {
-        int a;
-        bool await_ready() { return false; }
-        void await_suspend(std::coroutine_handle<> h)
-        {
-            p = &a;
-        }
-        int await_resume() { return a; }
-    };
-    return awaitable {};
+task task2() {
+    std::cout << "run" << std::endl;
+    co_return;
 }
 
 task coro_fun() {
     std::cout << "before" << std::endl;
-    int ret = co_await switch_to_new_thread();
-    std::cout << ret << std::endl;
+    co_await task2();
+    std::cout << "after" << std::endl;
 }
 
 int main() {
     task t = coro_fun();
-    *p = 3;
-    t.resume();
 }

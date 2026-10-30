@@ -10,6 +10,7 @@ target_sources(common
         event.cpp
         async_handler.cpp
         thread_data.cpp
+        coro_types.cpp
 )
 
 target_include_directories(common PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

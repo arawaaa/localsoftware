@@ -27,10 +27,10 @@ mkdir -p /var/log/localsoftware;
 
 setcap 'cap_net_bind_service=+ep' /usr/local/bin/localsoftware
 
-restorecon /usr/local/bin/localsoftware; or echo "Failed to set permissions: exiting"
-restorecon /etc/systemd/system/localsoftware.service; or echo "Failed to set permissions: exiting"
-restorecon -r /srv; or echo "Failed to set permissions: exiting"
-restorecon -r /etc/NetworkManager/dispatcher.d; or echo "Failed to set permissions: exiting"
+restorecon /usr/local/bin/localsoftware
+restorecon /etc/systemd/system/localsoftware.service
+restorecon -r /srv
+restorecon -r /etc/NetworkManager/dispatcher.d
 
 systemctl daemon-reload
 systemctl restart localsoftware.service

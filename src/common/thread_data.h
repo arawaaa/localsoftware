@@ -38,6 +38,7 @@ class ThreadData {
     ObjectMap obj_info;
     TimerMap timers;
     map<uint64_t, list<pair<uint64_t, uint64_t>>> also_notify;
+    unordered_map<uint64_t, Waiters> readiness_waiters;
 
     uint64_t proc_id_base, proc_id_curr; // Upper bound of block is id_base + 1000
     uint64_t obj_id_base, obj_id_curr;
@@ -57,6 +58,11 @@ public:
     uint64_t get_obj_id();
 
     uint64_t get_tim_id();
+
+    /*
+     * Add new uring awaitable, return id handle
+     */
+    pair<uint64_t, list<Waiters::awaits>::iterator> add_co_uring(function<void(io_uring_sqe*)> sfunc, int* res);
 
 private:
     /*

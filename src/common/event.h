@@ -17,10 +17,6 @@ using namespace std;
 extern thread_local shared_ptr<IoUringData> context;
 extern thread_local uint64_t uring_id;
 
-class ThreadData;
-
-extern thread_local ThreadData* tdata;
-
 /**
  * @brief Base class for all io_uring events.
  */
@@ -29,15 +25,13 @@ class Event {
     struct overloaded : Ts... { using Ts::operator()...; };
 public:
     /**
-     * For constructors: do not call any delegated class functions. They will not have a context
-     * to run within and will not be run!
+     * Event managed subclasses can be initialized and called in constructor body,
+     * as the uring_data_ optionally shared context is available
      */
     explicit Event(vector<shared_ptr<File>> file);
 
     Event(Event&) = delete;
     Event operator=(Event&) = delete;
-
-    virtual void construct_with_global() { };
 
     Event();
 
@@ -53,20 +47,6 @@ public:
      * @brief Get string description for class
      */
     virtual string get_info() const = 0;
-
-    /**
-     * @brief Whether the class can be run on multiple threads
-     */
-    constexpr virtual bool is_thread_safe() {
-        return false;
-    }
-
-    /**
-     * @brief Called on successful start of a function call
-     *
-     * Do not start any non-direct functions from this function
-     */
-    virtual void start_response(uint64_t, CallResponse) { };
 
     /**
      * @brief Call a function in a subclass, automatically choosing the thread,
@@ -86,7 +66,7 @@ public:
 
     // co_await liburing calls
     template <typename... Args, typename... FnArgs>
-    readiness_api_awaitable ca(int op, void(*liburing)(io_uring_sqe*, Args...), FnArgs... args);
+    readiness_api_awaitable ca(void(*liburing)(io_uring_sqe*, Args...), FnArgs... args);
 
     // TODO RAII handle, possibly with C++26 reflection
     // With functions that return "Promise" objects that lambdas can be attached to
@@ -144,7 +124,6 @@ private:
     list<EventQueuedConstruct> construct_;
     list<EventQueuedFunction> function_;
     list<EventQueuedUring> uring_;
-    list<EventQueuedUringCo> uring_co_;
     list<EventQueuedTimer> timer_;
     list<EventQueuedDelete> delete_;
     list<EventQueuedAttach> attach_;

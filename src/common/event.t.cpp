@@ -58,19 +58,12 @@ void Event::c(int op, void(*liburing)(io_uring_sqe*, Args...), FnArgs... args) {
 }
 
 template <typename... Args, typename... FnArgs>
-readiness_api_awaitable Event::ca(int op, void(*liburing)(io_uring_sqe*, Args...), FnArgs... args) {
+readiness_api_awaitable Event::ca(void(*liburing)(io_uring_sqe*, Args...), FnArgs... args) {
     auto f = [args..., liburing](io_uring_sqe* sqe) mutable {
         liburing(sqe, args...);
     };
 
-    uint64_t id = uring_id++;
-    uring_co_.emplace_back(EventQueuedUringCo {
-        .id = id,
-        .op = op,
-        .fun = f
-    });
-
-    return readiness_api_awaitable(id);
+    return readiness_api_awaitable(f);
 }
 
 template <typename Obj, typename... Args>

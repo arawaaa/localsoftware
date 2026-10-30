@@ -89,6 +89,12 @@ uint64_t ThreadData::get_tim_id() {
     return tim_id_curr++;
 }
 
+pair<uint64_t, list<Waiters::awaits>::iterator> ThreadData::add_co_uring(function<void(io_uring_sqe*)> sfunc, int* res) {
+    uint64_t id = get_proc_id();
+    auto it = readiness_waiters[id].waiters.emplace(readiness_waiters[id].waiters.end(), Waiters::awaits {res, {}});
+    return {id, it};
+}
+
 bool ThreadData::handle_dequeue() {
     PerThread::EventVariant result;
     bool success = per_thread_data[thread].q.try_pop(result);
@@ -102,9 +108,6 @@ bool ThreadData::handle_dequeue() {
         },
         [&, this] (FunctionCall& func) {
             function_call(func);
-        },
-        [&] (ProcedureUpdate& upd) {
-            obj_info[upd.ti.obj_id].ptr->start_response(upd.ci.proc_id, upd.resp);
         },
         [&, this] (Delete& del) mutable {
             auto& children = obj_info[del.ti.obj_id].children;
@@ -236,11 +239,6 @@ void ThreadData::process_uring() {
 }
 
 void ThreadData::construct_call(ConstructorCall& construct) {
-    // We split construction into two phases
-    // The actual constructor is local-only
-    // A secondary function construct_with_global() is allowed to
-    // make calls, etc
-
     context = reinterpret_pointer_cast<IoUringData>(std::move(construct.uring_data));
     obj_info.emplace(construct.ti.obj_id, ObjectDataThreaded {
         .ptr = construct.constructor(),
@@ -248,8 +246,6 @@ void ThreadData::construct_call(ConstructorCall& construct) {
         .parents = {{construct.ci.thread_id, construct.ci.obj_id}},
         .children = {}
     });
-
-    obj_info[construct.ti.obj_id].ptr->construct_with_global();
 
     process_queued(obj_info[construct.ti.obj_id].ptr, construct.ti);
 }
@@ -264,24 +260,6 @@ void ThreadData::function_call(FunctionCall& func) {
     CallResponse resp = func.call(obj_info[func.ti.obj_id].ptr, func.ti.proc_id);
 
     process_queued(obj_info[func.ti.obj_id].ptr, func.ti);
-
-    if (static_cast<uint64_t>(func.ci.thread_id) < per_thread_data.size()) {
-        // per_thread_data[func.ci.thread_id].q.push(
-        //     ProcedureUpdate {
-        //         .type = PUType::StartConfirm,
-        //         .resp = resp,
-        //         .ci = CallerInfo {
-        //             .thread_id = thread,
-        //             .obj_id = func.ti.obj_id,
-        //             .proc_id = func.ti.proc_id
-        //         },
-        //         .ti = TargetInfo {
-        //             .obj_id = func.ci.obj_id,
-        //             .proc_id = func.ci.proc_id
-        //         }
-        //     }
-        // );
-    }
 
     proc_to_dat[func.ti.proc_id].op_hint = resp.op_hint;
     proc_to_dat[func.ti.proc_id].description = resp.description;

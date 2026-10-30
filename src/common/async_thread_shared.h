@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <coroutine>
 
 #include "defs.h"
 
@@ -112,18 +113,6 @@ struct FunctionCall {
     TargetInfo ti;
 };
 
-enum class PUType : int {
-    StartConfirm,
-    Yield
-};
-
-struct ProcedureUpdate {
-    PUType type;
-    CallResponse resp;
-    CallerInfo ci;
-    TargetInfo ti;
-};
-
 struct Delete {
     CallerInfo ci;
     TargetInfo ti;
@@ -138,7 +127,7 @@ struct Data {
 // ThreadData internal
 
 struct alignas(hardware_destructive_interference_size) PerThread {
-    typedef variant<ConstructorCall, FunctionCall, ProcedureUpdate, Delete, Data, RootStart> EventVariant;
+    typedef variant<ConstructorCall, FunctionCall, Delete, Data, RootStart> EventVariant;
     typedef oneapi::tbb::concurrent_bounded_queue<EventVariant> WorkQueue;
     WorkQueue q;
 
@@ -156,4 +145,13 @@ struct IdBlocks {
     IdBlocks() {};
     IdBlocks(IdBlocks&) = delete;
     IdBlocks& operator=(IdBlocks&) = delete;
+};
+
+// For uring only
+struct Waiters {
+    struct awaits {
+        int* result;
+        coroutine_handle<> handle;
+    };
+    list<awaits> waiters;
 };
