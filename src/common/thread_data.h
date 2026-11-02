@@ -1,5 +1,6 @@
 #pragma once
 
+#include <coroutine>
 #include <cstdint>
 #include <iostream>
 #include <liburing.h>
@@ -20,6 +21,10 @@ extern thread_local AllocatorWrapper alloc;
 extern thread_local uint64_t uring_id;
 extern thread_local ThreadData* tdata;
 
+/*
+ * Class for managing a ring for each thread, triggering awaiters and on_yield functions.
+ * Needs logic for adding more rings for auto-downscaling
+ */
 class ThreadData {
     template<class... Ts>
     struct overloaded : Ts... { using Ts::operator()...; };
@@ -39,6 +44,7 @@ class ThreadData {
     TimerMap timers;
     map<uint64_t, list<pair<uint64_t, uint64_t>>> also_notify;
     unordered_map<uint64_t, Waiters> readiness_waiters;
+    deque<function<void(io_uring_sqe*)>> sqes;
 
     uint64_t proc_id_base, proc_id_curr; // Upper bound of block is id_base + 1000
     uint64_t obj_id_base, obj_id_curr;
@@ -59,10 +65,20 @@ public:
 
     uint64_t get_tim_id();
 
+    // Readiness awaitable notification functions
+
     /*
      * Add new uring awaitable, return id handle
      */
-    pair<uint64_t, list<Waiters::awaits>::iterator> add_co_uring(function<void(io_uring_sqe*)> sfunc, int* res);
+    uint64_t co_register(function<void(io_uring_sqe*)> sfunc, int* res);
+
+    ThreadData* co_preferred();
+
+    void co_update(uint64_t id, int* res);
+
+    void co_deregister(uint64_t id);
+
+    void co_handle(uint64_t id, coroutine_handle<> handle);
 
 private:
     /*

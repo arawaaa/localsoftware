@@ -9,7 +9,7 @@ int* p;
 
 struct task {
     struct promise_type {
-        suspend_never initial_suspend() { std::cout << "Initial suspend" << std::endl; return {};}
+        suspend_always initial_suspend() { std::cout << "Initial suspend" << std::endl; return {};}
         suspend_never final_suspend() noexcept { std::cout << "Final suspend" << std::endl; return{};}
         void return_void() {}
         task get_return_object() {
@@ -21,9 +21,15 @@ struct task {
 
     task(promise_type& pt) {
         h = Handle::from_promise(pt);
+        std::cout << "construct" << std::endl;
     }
 
-    bool await_ready() { return true; }
+    ~task() {
+        std::cout << "delete" << std::endl;
+        h.destroy();
+    }
+
+    bool await_ready() { return false; }
 
     void await_suspend(std::coroutine_handle<> _h)
     {
@@ -56,4 +62,8 @@ task coro_fun() {
 
 int main() {
     task t = coro_fun();
+    t.resume();
+    std::cout << "destroy" << std::endl;
+    // t.destroy();
+    std::cout << "control" << std::endl;
 }

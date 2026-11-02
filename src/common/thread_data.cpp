@@ -89,10 +89,32 @@ uint64_t ThreadData::get_tim_id() {
     return tim_id_curr++;
 }
 
-pair<uint64_t, list<Waiters::awaits>::iterator> ThreadData::add_co_uring(function<void(io_uring_sqe*)> sfunc, int* res) {
+uint64_t ThreadData::co_register(function<void(io_uring_sqe*)> sfunc, int* res) {
     uint64_t id = get_proc_id();
-    auto it = readiness_waiters[id].waiters.emplace(readiness_waiters[id].waiters.end(), Waiters::awaits {res, {}});
-    return {id, it};
+    readiness_waiters[id].result = res;
+    sqes.push_back(sfunc);
+    return id;
+}
+
+void ThreadData::co_update(uint64_t id, int* res) {
+    if (readiness_waiters.contains(id)) {
+        readiness_waiters[id].result = res;
+    }
+}
+
+void ThreadData::co_deregister(uint64_t id) {
+    readiness_waiters.erase(id);
+}
+
+ThreadData* ThreadData::co_preferred() {
+    return this;
+}
+
+void ThreadData::co_handle(uint64_t id, coroutine_handle<> handle) {
+    auto iter = readiness_waiters.find(id);
+    if (handle && iter != readiness_waiters.end()) {
+        iter->second.handle = handle;
+    }
 }
 
 bool ThreadData::handle_dequeue() {
@@ -162,6 +184,15 @@ bool ThreadData::handle_dequeue() {
             per_thread_data[thread].q.push(cons);
             per_thread_data[thread].q.push(fun);
         },
+        [&] (CqeReady& cqe_notif) {
+            if (!(readiness_waiters.contains(cqe_notif.id) && readiness_waiters[cqe_notif.id].handle)) return;
+
+            *readiness_waiters[cqe_notif.id].result = cqe_notif.result;
+            // Handle should still be valid atp
+            readiness_waiters[cqe_notif.id].handle.resume();
+
+            // TODO activate barrier'd coroutines
+        },
         [] (monostate) {
 
         }
@@ -226,6 +257,12 @@ void ThreadData::process_uring() {
             [&] (TimerUpdate& tim_upd) {
                 if (ptr->res >= 0 && tim_upd.remove)
                     timers.erase(tim_upd.timer_id);
+            },
+            [&] (CoEvent& event) {
+                per_thread_data[thread].q.push(CqeReady {
+                    .id = event.id,
+                    .result = ptr->res
+                });
             }
         }, uringdata->data);
 

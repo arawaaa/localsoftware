@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <map>
 #include <coroutine>
 
@@ -124,10 +125,15 @@ struct Data {
     EventType data;
 };
 
+struct CqeReady {
+    uint64_t id;
+    int result;
+};
+
 // ThreadData internal
 
 struct alignas(hardware_destructive_interference_size) PerThread {
-    typedef variant<ConstructorCall, FunctionCall, Delete, Data, RootStart> EventVariant;
+    typedef variant<ConstructorCall, FunctionCall, Delete, Data, RootStart, CqeReady> EventVariant;
     typedef oneapi::tbb::concurrent_bounded_queue<EventVariant> WorkQueue;
     WorkQueue q;
 
@@ -149,9 +155,6 @@ struct IdBlocks {
 
 // For uring only
 struct Waiters {
-    struct awaits {
-        int* result;
-        coroutine_handle<> handle;
-    };
-    list<awaits> waiters;
+    int* result;
+    coroutine_handle<> handle;
 };

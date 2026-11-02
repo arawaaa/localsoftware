@@ -80,8 +80,12 @@ struct TimerUpdate {
     bool remove;
 };
 
+struct CoEvent {
+    uint64_t id;
+};
+
 struct IoUringAttached {
-    std::variant<EventData, Timer, TimerUpdate> data;
+    std::variant<EventData, Timer, TimerUpdate, CoEvent> data;
 };
 
 enum OpHint {
