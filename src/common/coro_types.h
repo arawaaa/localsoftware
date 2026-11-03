@@ -43,6 +43,10 @@ struct readiness_api_awaitable {
     int await_resume();
 };
 
+template<typename T>
+struct pinned {
+};
+
 /*
  * co_await on this object to unpause when the first awaitable finishes.
  * Remaining requests will be cancelled.

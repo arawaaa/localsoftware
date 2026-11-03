@@ -7,8 +7,8 @@
 extern thread_local ThreadData* tdata;
 
 readiness_api_awaitable::readiness_api_awaitable(function<void(io_uring_sqe*)> sfunc)
-    : data(tdata)
 {
+    data = tdata->co_preferred();
     id = data->co_register(sfunc, &ret);
 }
 
@@ -23,6 +23,7 @@ readiness_api_awaitable& readiness_api_awaitable::operator=(readiness_api_awaita
     // Get rid of this handle
     data->co_deregister(id);
     id = other.id;
+    data->co_update(id, &ret);
     ret = other.ret;
     data = other.data;
 
