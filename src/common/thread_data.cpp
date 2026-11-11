@@ -31,6 +31,7 @@ ThreadData::ThreadData(vector<PerThread>& data, IdBlocks& blocks, int thread) :
 }
 
 void ThreadData::run() {
+    tdata = this;
     __kernel_timespec ts ={
         .tv_sec = 0,
         .tv_nsec = 100000
@@ -62,6 +63,9 @@ void ThreadData::run() {
         process_uring();
 
         for (int i = 0; i < 256 && (handle_dequeue() || (q_nonempty = false)); i++);
+
+        queue_uring();
+        io_uring_submit(&ring);
     }
 }
 
@@ -89,17 +93,11 @@ uint64_t ThreadData::get_tim_id() {
     return tim_id_curr++;
 }
 
-uint64_t ThreadData::co_register(function<void(io_uring_sqe*)> sfunc, int* res) {
+uint64_t ThreadData::co_register(function<void(io_uring_sqe*)> sfunc) {
     uint64_t id = get_proc_id();
-    readiness_waiters[id].result = res;
-    sqes.push_back(sfunc);
+    sqes.emplace_back(sfunc, id, TargetInfo {.obj_id = co_obj_id, .proc_id = co_proc_id});
+    readiness_waiters.insert({id, {}});
     return id;
-}
-
-void ThreadData::co_update(uint64_t id, int* res) {
-    if (readiness_waiters.contains(id)) {
-        readiness_waiters[id].result = res;
-    }
 }
 
 void ThreadData::co_deregister(uint64_t id) {
@@ -115,6 +113,10 @@ void ThreadData::co_handle(uint64_t id, coroutine_handle<> handle) {
     if (handle && iter != readiness_waiters.end()) {
         iter->second.handle = handle;
     }
+}
+
+int ThreadData::co_result(uint64_t id) {
+    return readiness_waiters[id].result;
 }
 
 bool ThreadData::handle_dequeue() {
@@ -155,6 +157,22 @@ bool ThreadData::handle_dequeue() {
         [&] (Data& on_data) {
             data_received(on_data);
         },
+        [&] (CoRoot& root) {
+            obj_info.emplace(root.ti.obj_id, ObjectDataThreaded {
+                .ptr = root.constructor(),
+                .assoc_procs = {},
+                .parents = {{numeric_limits<uint64_t>::max(), numeric_limits<uint64_t>::max()}},
+                .children = {}
+            });
+
+            co_obj_id = root.ti.obj_id;
+            co_proc_id = root.ti.proc_id;
+
+            auto ptask = root.fn(obj_info[root.ti.obj_id].ptr);
+            ptask->resume();
+
+            process_queued(obj_info[root.ti.obj_id].ptr, root.ti);
+        },
         [&](RootStart& rs) {
             // Dissemble into Constructor and FunctionCall, do nothing else
             ConstructorCall cons = {
@@ -187,19 +205,39 @@ bool ThreadData::handle_dequeue() {
         [&] (CqeReady& cqe_notif) {
             if (!(readiness_waiters.contains(cqe_notif.id) && readiness_waiters[cqe_notif.id].handle)) return;
 
-            *readiness_waiters[cqe_notif.id].result = cqe_notif.result;
+            readiness_waiters[cqe_notif.id].result = cqe_notif.result;
             // Handle should still be valid atp
+            co_obj_id = cqe_notif.ti.obj_id;
+            co_proc_id = cqe_notif.ti.proc_id;
             readiness_waiters[cqe_notif.id].handle.resume();
 
-            // TODO activate barrier'd coroutines
+            // TODO activate barrier'd coroutines. Do we need to do this?
+
+            // Interop with the old model
+            process_queued(obj_info[cqe_notif.ti.obj_id].ptr, cqe_notif.ti);
         },
         [] (monostate) {
 
         }
     }, result);
 
-    io_uring_submit(&ring);
     return true;
+}
+
+void ThreadData::queue_uring() {
+    size_t sqes_len = sqes.size();
+    for (size_t i = 0; i < 512 && i < sqes_len; i++) {
+        auto& [call, id, ti] = sqes.front();
+
+        io_uring_sqe* sqe = io_uring_get_sqe(&ring);
+        if (sqe) {
+            call(sqe);
+            IoUringAttached* attached = new IoUringAttached;
+            attached->data.emplace<CoEvent>(CoEvent{.id = id, .obj_id = ti.obj_id, .proc_id = ti.proc_id});
+            io_uring_sqe_set_data(sqe, attached);
+        }
+        sqes.pop_front();
+    }
 }
 
 void ThreadData::process_uring() {
@@ -261,7 +299,11 @@ void ThreadData::process_uring() {
             [&] (CoEvent& event) {
                 per_thread_data[thread].q.push(CqeReady {
                     .id = event.id,
-                    .result = ptr->res
+                    .result = ptr->res,
+                    .ti = TargetInfo {
+                        .obj_id = event.obj_id,
+                        .proc_id = event.proc_id
+                    }
                 });
             }
         }, uringdata->data);

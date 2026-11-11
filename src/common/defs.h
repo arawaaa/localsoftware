@@ -82,6 +82,8 @@ struct TimerUpdate {
 
 struct CoEvent {
     uint64_t id;
+    uint64_t obj_id;
+    uint64_t proc_id;
 };
 
 struct IoUringAttached {

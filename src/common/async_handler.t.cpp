@@ -22,3 +22,20 @@ void AsyncHandler::initialize_root_event(Args&&... args) {
 
     per_thread_data[pt_idx].q.push(callinfo);
 }
+
+template <typename Obj, typename... Args>
+void AsyncHandler::compute_root(function<shared_ptr<task>(shared_ptr<Event>)> fn, Args&&... args) {
+    auto f = [args...] mutable {
+        return make_shared<Obj>(std::forward<Args>(args)...);
+    };
+
+    CoRoot callinfo {
+        .constructor = f,
+        .fn = fn,
+        .ti = TargetInfo {
+            .obj_id = get_obj_id(),
+            .proc_id = get_proc_id()
+        }
+    };
+    per_thread_data[pt_idx].q.push(callinfo);
+}

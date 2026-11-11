@@ -2,8 +2,10 @@
 
 #include <cstdint>
 #include <map>
+#include <functional>
 #include <coroutine>
 
+#include "coro_task.h"
 #include "defs.h"
 
 struct EventInfo {
@@ -99,6 +101,12 @@ struct RootStart {
     TargetInfo ti;
 };
 
+struct CoRoot {
+    ConstructFunc constructor;
+    function<shared_ptr<task>(shared_ptr<Event>)> fn;
+    TargetInfo ti;
+};
+
 struct ConstructorCall {
     ConstructFunc constructor;
     CallerInfo ci;
@@ -128,12 +136,13 @@ struct Data {
 struct CqeReady {
     uint64_t id;
     int result;
+    TargetInfo ti;
 };
 
 // ThreadData internal
 
 struct alignas(hardware_destructive_interference_size) PerThread {
-    typedef variant<ConstructorCall, FunctionCall, Delete, Data, RootStart, CqeReady> EventVariant;
+    typedef variant<ConstructorCall, FunctionCall, Delete, Data, RootStart, CoRoot, CqeReady> EventVariant;
     typedef oneapi::tbb::concurrent_bounded_queue<EventVariant> WorkQueue;
     WorkQueue q;
 
@@ -155,6 +164,6 @@ struct IdBlocks {
 
 // For uring only
 struct Waiters {
-    int* result;
+    int result;
     coroutine_handle<> handle;
 };

@@ -1,7 +1,1 @@
-[
-  {
-    "directory": "/home/arawat/projects/localsoftware",
-    "command": "clang++ -fuse-ld=lld -Wall -Wextra -Wno-deprecated-declarations -I./src -g -O0 -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer -luring -ltbb -lssl -lcrypto -lpthread -latomic -lboost_json -std=c++26 src/localsoftware.cpp -o localsoftware",
-    "file": "src/wlan_monitor.cpp"
-  }
-]
+/home/arawat/projects/localsoftware/build/debug/compile_commands.json

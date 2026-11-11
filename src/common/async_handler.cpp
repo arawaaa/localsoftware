@@ -1,29 +1,14 @@
 #include "async_handler.h"
 
 #include <cstdint>
-#include <limits>
-#include <memory>
-#include <new>
-#include <variant>
 #include <vector>
-#include <functional>
-#include <tuple>
-#include <utility>
-#include <optional>
-#include <typeindex>
-#include <queue>
 #include <liburing.h>
-#include <ranges>
-#include <functional>
-#include <iostream>
 #include <thread>
 
 #include <oneapi/tbb.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 
-#include "event.h"
-#include "defs.h"
 #include "thread_data.h"
 #include "async_thread_shared.h"
 

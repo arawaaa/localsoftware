@@ -17,7 +17,6 @@ class ThreadData;
  * The awaitable must not be destroyed while it is in use!
  */
 struct readiness_api_awaitable {
-    int ret;
     uint64_t id;
     // This thread stays alive until all awaitables associated to it
     // are finished (destroyed). Can be shifted on start/suspend
@@ -28,7 +27,7 @@ struct readiness_api_awaitable {
     readiness_api_awaitable(readiness_api_awaitable& other) = delete;
     readiness_api_awaitable& operator=(readiness_api_awaitable& other) = delete;
 
-    // Moved-from object should be considered invalid. Do not move an awaitable that is already suspended, return value will be wrong!
+    // TODO Moved-from object should be considered invalid. Do not move an awaitable that is already suspended, return value will be wrong!
     readiness_api_awaitable(readiness_api_awaitable&& other);
 
     readiness_api_awaitable& operator=(readiness_api_awaitable&& other);
@@ -41,10 +40,6 @@ struct readiness_api_awaitable {
 
     // liburing functions return only void, but as we co_await for a completion, we must convey the return code
     int await_resume();
-};
-
-template<typename T>
-struct pinned {
 };
 
 /*

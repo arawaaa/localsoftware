@@ -62,6 +62,42 @@ void log_entry(time_t ts, int d, int m, int y, int h, unsigned long long tx, uns
     VisitStats::getInstance().get_pretty_stats(f2);
 }
 
+int setup_server_socket(int port) {
+    int server_fd;
+    struct sockaddr_in6 address{
+        .sin6_family = AF_INET6,
+        .sin6_port = htons(port),
+        .sin6_flowinfo = 0,
+        .sin6_addr = IN6ADDR_ANY_INIT,
+        .sin6_scope_id = 0
+    };
+    int opt = 1;
+
+    if ((server_fd = socket(AF_INET6, SOCK_STREAM, 0)) == 0) {
+        perror("socket failed");
+        return -1;
+    }
+
+    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt))) {
+        perror("setsockopt");
+        close(server_fd);
+        return -1;
+    }
+
+    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
+        perror("bind failed");
+        close(server_fd);
+        return -1;
+    }
+
+    if (listen(server_fd, -1) < 0) {
+        perror("listen");
+        close(server_fd);
+        return -1;
+    }
+    return server_fd;
+}
+
 int setup_server_socket6(int port) {
     int server_fd;
     struct sockaddr_in6 address{
@@ -104,7 +140,7 @@ int setup_server_socket6(int port) {
     return server_fd;
 }
 
-int setup_server_socket(int port) {
+int setup_server_socket4(int port) {
     int server_fd;
     struct sockaddr_in address{};
     int opt = 1;
@@ -140,14 +176,11 @@ int setup_server_socket(int port) {
 
 void server_func() {
     // Single stack IPv6 for all surfaces outside of homepage, which is dual-stack
-    shared_ptr<File> ws_fd = make_shared<File>(setup_server_socket(SERVER_PORT));
+    shared_ptr<File> ws_fd = make_shared<File>(setup_server_socket4(SERVER_PORT));
     if (ws_fd->get() < 0) return;
 
     shared_ptr<File> ws6_fd = make_shared<File>(setup_server_socket6(SERVER_PORT));
     if (ws6_fd->get() < 0) return;
-
-    shared_ptr<File> http6_fd = make_shared<File>(setup_server_socket6(HTTP_PORT));
-    if (http6_fd->get() < 0) return;
 
     shared_ptr<File> http_fd = make_shared<File>(setup_server_socket(HTTP_PORT));
     if (http_fd->get() < 0) return;
@@ -155,8 +188,8 @@ void server_func() {
     shared_ptr<File> https_fd = make_shared<File>(setup_server_socket(HTTPS_PORT));
     if (https_fd->get() < 0) return;
 
-    shared_ptr<File> https6_fd = make_shared<File>(setup_server_socket6(HTTPS_PORT));
-    if (https6_fd->get() < 0) return;
+    // shared_ptr<File> https6_fd = make_shared<File>(setup_server_socket6(HTTPS_PORT));
+    // if (https6_fd->get() < 0) return;
 
     // shared_ptr<File> rphttps_fd = make_shared<File>(setup_server_socket(RP_PORT));
     // if (rphttps_fd->get() < 0) return;
@@ -169,12 +202,17 @@ void server_func() {
     instance.initialize_root_event<BandwidthMonitorAccept>(ws_files, true, "/srv/bwith");
 
     // Setup HTTP Landing Accept Event
-    vector<shared_ptr<File>> http_files = {http_fd, http6_fd};
-    instance.initialize_root_event<LandingAccept>(http_files, false, "/srv/landing");
-    //
+    instance.compute_root<LandingAccept>([](shared_ptr<Event> accept) -> shared_ptr<task> {
+        return make_shared<pinned<void>>(std::move(static_pointer_cast<LandingAccept>(accept)->start()));
+    }, http_fd, false, "/srv/landing");
+
     // Setup HTTPS Landing Accept Event
-    vector<shared_ptr<File>> https_files = {https_fd, https6_fd};
-    instance.initialize_root_event<LandingAccept>(https_files, true, "/srv/landing");
+    instance.compute_root<LandingAccept>([](shared_ptr<Event> accept) -> shared_ptr<task> {
+        // currently the coroutine is being leaked after task destruction, so we continue executing.
+        // When we add the (execution method sensitive) destructor, make sure to have some storage in
+        // threaddata (for now) for the root nodes
+        return make_shared<pinned<void>>(std::move(static_pointer_cast<LandingAccept>(accept)->start()));
+    }, https_fd, true, "/srv/landing");
 
     // vector<shared_ptr<File>> rp_files = {rphttps_fd};
     // instance.initialize_root_event<ReverseProxyAccept>(rp_files, "/srv/rp");

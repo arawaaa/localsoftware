@@ -44,18 +44,23 @@ class ThreadData {
     TimerMap timers;
     map<uint64_t, list<pair<uint64_t, uint64_t>>> also_notify;
     unordered_map<uint64_t, Waiters> readiness_waiters;
-    deque<function<void(io_uring_sqe*)>> sqes;
+    deque<tuple<function<void(io_uring_sqe*)>, uint64_t, TargetInfo>> sqes;
 
     uint64_t proc_id_base, proc_id_curr; // Upper bound of block is id_base + 1000
     uint64_t obj_id_base, obj_id_curr;
     uint64_t tim_id_base, tim_id_curr;
     bool o_init = false, p_init = false, t_init = false;
 
+    // HACK interop
+    uint64_t co_obj_id, co_proc_id;
+
     vector<PerThread>& per_thread_data;
     IdBlocks& blocks;
 
 public:
     ThreadData(vector<PerThread>& data, IdBlocks& blocks, int thread);
+
+    ThreadData(ThreadData&& other) = default;
 
     void run();
 
@@ -70,15 +75,15 @@ public:
     /*
      * Add new uring awaitable, return id handle
      */
-    uint64_t co_register(function<void(io_uring_sqe*)> sfunc, int* res);
+    uint64_t co_register(function<void(io_uring_sqe*)> sfunc);
 
     ThreadData* co_preferred();
-
-    void co_update(uint64_t id, int* res);
 
     void co_deregister(uint64_t id);
 
     void co_handle(uint64_t id, coroutine_handle<> handle);
+
+    int co_result(uint64_t id);
 
 private:
     /*
@@ -86,6 +91,8 @@ private:
      * @returns Whether any message was processed at all
      */
     bool handle_dequeue();
+
+    void queue_uring();
 
     void process_uring();
 

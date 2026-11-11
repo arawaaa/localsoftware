@@ -14,6 +14,7 @@
 #include "defs.h"
 #include "thread_data.h"
 #include "async_thread_shared.h"
+#include "coro_task.h"
 
 using namespace std;
 
@@ -37,6 +38,15 @@ public:
      */
     template <typename Obj, typename... Args>
     void initialize_root_event(Args&&... args);
+
+    /**
+     * @brief Takes the function Fun and runs it as a coroutine
+     * Defines a root of a connected component DAG in the compute graph.
+     * The object is owned by the caller, it's expected this function
+     * is long-lived.
+     */
+    template <typename Obj, typename... Args>
+    void compute_root(function<shared_ptr<task>(shared_ptr<Event>)> fn, Args&&... args);
 
 private:
     uint64_t get_proc_id();

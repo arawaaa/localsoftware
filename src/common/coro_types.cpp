@@ -9,13 +9,12 @@ extern thread_local ThreadData* tdata;
 readiness_api_awaitable::readiness_api_awaitable(function<void(io_uring_sqe*)> sfunc)
 {
     data = tdata->co_preferred();
-    id = data->co_register(sfunc, &ret);
+    id = data->co_register(sfunc);
 }
 
 readiness_api_awaitable::readiness_api_awaitable(readiness_api_awaitable&& other)
-    : id(other.id), ret(other.ret), data(other.data)
+    : id(other.id), data(other.data)
 {
-    data->co_update(id, &ret);
     other.data = nullptr;
 }
 
@@ -23,8 +22,6 @@ readiness_api_awaitable& readiness_api_awaitable::operator=(readiness_api_awaita
     // Get rid of this handle
     data->co_deregister(id);
     id = other.id;
-    data->co_update(id, &ret);
-    ret = other.ret;
     data = other.data;
 
     return *this;
@@ -43,5 +40,5 @@ void readiness_api_awaitable::await_suspend(coroutine_handle<> handle) {
 }
 
 int readiness_api_awaitable::await_resume() {
-    return ret;
+    return data->co_result(id);
 }
