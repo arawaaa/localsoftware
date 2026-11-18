@@ -1,9 +1,12 @@
 #pragma once
 
+#include <list>
+
 #include "event.h"
 #include "defs.h"
 #include "http_manager.h"
 #include "coro_pinned.h"
+#include "landing_server.h"
 
 using namespace std;
 
@@ -13,14 +16,10 @@ public:
 
     pinned<void> start();
 
-    optional<pair<bool, int>> on_yield(EventType event) override;
-
-    string get_info() const override;
-
 private:
     struct sockaddr_in6 client_addr_{};
     socklen_t client_addr_len_ = sizeof(sockaddr_in6);
     bool use_tls_;
     HTTPManager http_manager_;
-    unordered_map<uint64_t, int> indices;
+    list<optional<pair<AioLandingHTTP, optional<pinned<void>>>>> servers_;
 };

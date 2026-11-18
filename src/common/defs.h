@@ -8,6 +8,7 @@
 #include <variant>
 #include <utility>
 #include <set>
+#include <iostream>
 #include <unordered_set>
 #include <unordered_map>
 
@@ -63,12 +64,6 @@ using EventType = variant<CallStarted, Timeout, IoUringResult, Wakeup, ChildTask
 
 // Types passed within a variant to the user data in IoUring calls
 
-struct EventData {
-    int op;
-    uint64_t obj_id;
-    uint64_t proc_id;
-};
-
 struct Timer {
     uint64_t timer_id;
     uint64_t obj_id;
@@ -87,7 +82,7 @@ struct CoEvent {
 };
 
 struct IoUringAttached {
-    std::variant<EventData, Timer, TimerUpdate, CoEvent> data;
+    std::variant</*Timer, TimerUpdate,*/ CoEvent> data;
 };
 
 enum OpHint {

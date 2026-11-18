@@ -93,26 +93,15 @@ uint64_t ThreadData::get_tim_id() {
     return tim_id_curr++;
 }
 
-uint64_t ThreadData::co_register(function<void(io_uring_sqe*)> sfunc) {
+uint64_t ThreadData::co_register(function<void(io_uring_sqe*)> sfunc, coroutine_handle<> handle) {
     uint64_t id = get_proc_id();
-    sqes.emplace_back(sfunc, id, TargetInfo {.obj_id = co_obj_id, .proc_id = co_proc_id});
-    readiness_waiters.insert({id, {}});
+    sqes.emplace_back(sfunc, id);
+    readiness_waiters[id].handle = handle;
     return id;
 }
 
 void ThreadData::co_deregister(uint64_t id) {
     readiness_waiters.erase(id);
-}
-
-ThreadData* ThreadData::co_preferred() {
-    return this;
-}
-
-void ThreadData::co_handle(uint64_t id, coroutine_handle<> handle) {
-    auto iter = readiness_waiters.find(id);
-    if (handle && iter != readiness_waiters.end()) {
-        iter->second.handle = handle;
-    }
 }
 
 int ThreadData::co_result(uint64_t id) {
@@ -127,94 +116,21 @@ bool ThreadData::handle_dequeue() {
     };
 
     visit(overloaded {
-        [&] (ConstructorCall& construct) {
-            construct_call(construct);
-        },
-        [&, this] (FunctionCall& func) {
-            function_call(func);
-        },
-        [&, this] (Delete& del) mutable {
-            auto& children = obj_info[del.ti.obj_id].children;
-            // Propagate deletions
-            for (auto [objid, info] : children) {
-                per_thread_data[info.thread].q.push({
-                    Delete {
-                        // Forward call on behalf of caller
-                        .ci = del.ci,
-                        .ti = TargetInfo {
-                            .obj_id = objid,
-                            .proc_id = numeric_limits<uint64_t>::max()
-                        }
-                    }
-                });
-            }
-            for (auto proc_id : obj_info[del.ti.obj_id].assoc_procs) {
-                proc_to_dat.erase(proc_id);
-            }
-
-            obj_info.erase(del.ti.obj_id);
-        },
-        [&] (Data& on_data) {
-            data_received(on_data);
-        },
-        [&] (CoRoot& root) {
-            obj_info.emplace(root.ti.obj_id, ObjectDataThreaded {
-                .ptr = root.constructor(),
-                .assoc_procs = {},
-                .parents = {{numeric_limits<uint64_t>::max(), numeric_limits<uint64_t>::max()}},
-                .children = {}
-            });
-
-            co_obj_id = root.ti.obj_id;
-            co_proc_id = root.ti.proc_id;
-
-            auto ptask = root.fn(obj_info[root.ti.obj_id].ptr);
+        [&] (Root& root) {
+            auto ptr = root.constructor();
+            auto ptask = root.fn(ptr);
+            root_tasks.emplace_back(ptask, ptr);
             ptask->resume();
-
-            process_queued(obj_info[root.ti.obj_id].ptr, root.ti);
-        },
-        [&](RootStart& rs) {
-            // Dissemble into Constructor and FunctionCall, do nothing else
-            ConstructorCall cons = {
-                .constructor = rs.constructor,
-                .ci = CallerInfo {
-                    .thread_id = -1,
-                    .obj_id = numeric_limits<uint64_t>::max(),
-                    .proc_id = numeric_limits<uint64_t>::max()
-                },
-                .ti = TargetInfo {
-                    .obj_id = rs.ti.obj_id,
-                    .proc_id = numeric_limits<uint64_t>::max()
-                },
-                .uring_data = shared_ptr<IoUringData>()
-            };
-
-            FunctionCall fun = {
-                .call = rs.init,
-                .ci = CallerInfo {
-                    .thread_id = -1,
-                    .obj_id = numeric_limits<uint64_t>::max(),
-                    .proc_id = numeric_limits<uint64_t>::max()
-                },
-                .ti = rs.ti
-            };
-
-            per_thread_data[thread].q.push(cons);
-            per_thread_data[thread].q.push(fun);
         },
         [&] (CqeReady& cqe_notif) {
             if (!(readiness_waiters.contains(cqe_notif.id) && readiness_waiters[cqe_notif.id].handle)) return;
 
             readiness_waiters[cqe_notif.id].result = cqe_notif.result;
+
             // Handle should still be valid atp
-            co_obj_id = cqe_notif.ti.obj_id;
-            co_proc_id = cqe_notif.ti.proc_id;
             readiness_waiters[cqe_notif.id].handle.resume();
 
             // TODO activate barrier'd coroutines. Do we need to do this?
-
-            // Interop with the old model
-            process_queued(obj_info[cqe_notif.ti.obj_id].ptr, cqe_notif.ti);
         },
         [] (monostate) {
 
@@ -227,13 +143,13 @@ bool ThreadData::handle_dequeue() {
 void ThreadData::queue_uring() {
     size_t sqes_len = sqes.size();
     for (size_t i = 0; i < 512 && i < sqes_len; i++) {
-        auto& [call, id, ti] = sqes.front();
+        auto& [call, id] = sqes.front();
 
         io_uring_sqe* sqe = io_uring_get_sqe(&ring);
         if (sqe) {
             call(sqe);
             IoUringAttached* attached = new IoUringAttached;
-            attached->data.emplace<CoEvent>(CoEvent{.id = id, .obj_id = ti.obj_id, .proc_id = ti.proc_id});
+            attached->data.emplace<CoEvent>(CoEvent{.id = id});
             io_uring_sqe_set_data(sqe, attached);
         }
         sqes.pop_front();
@@ -249,61 +165,36 @@ void ThreadData::process_uring() {
 
         IoUringAttached* uringdata = reinterpret_cast<IoUringAttached*>(io_uring_cqe_get_data(ptr));
         visit(overloaded {
-            [&] (EventData& ev) {
-                // All class operations occur on the same thread, so this is safe
-                Data dt {
-                    .ci = CallerInfo {
-                        .thread_id = -1,
-                        .obj_id = numeric_limits<uint64_t>::max(), // Nonexistent originator
-                        .proc_id = numeric_limits<uint64_t>::max()
-                    },
-                    .ti = TargetInfo {
-                        .obj_id = ev.obj_id,
-                        .proc_id = ev.proc_id
-                    },
-                    .data = IoUringResult {
-                        .calling_id = ev.proc_id,
-                        .op = ev.op,
-                        .res = ptr->res
-                    },
-                };
-
-                per_thread_data[thread].q.push(dt);
-            },
-            [&] (Timer& tim) {
-                if (ptr->res == -ETIME) {
-                    Data data = {
-                        .ci = {
-                            .thread_id = -1,
-                            .obj_id = numeric_limits<uint64_t>::max(),
-                            .proc_id = numeric_limits<uint64_t>::max()
-                        },
-                        .ti = {
-                            .obj_id = tim.obj_id,
-                            .proc_id = tim.proc_id
-                        },
-                        .data = Timeout {
-                            .timer_id = tim.timer_id
-                        }
-                    };
-
-                    per_thread_data[thread].q.push(data);
-                } else if (ptr->res != -ECANCELED) {
-                    cout << "Unknown timer result: " << ptr->res << endl;
-                }
-            },
-            [&] (TimerUpdate& tim_upd) {
-                if (ptr->res >= 0 && tim_upd.remove)
-                    timers.erase(tim_upd.timer_id);
-            },
+            // [&] (Timer& tim) {
+            //     if (ptr->res == -ETIME) {
+            //         Data data = {
+            //             .ci = {
+            //                 .thread_id = -1,
+            //                 .obj_id = numeric_limits<uint64_t>::max(),
+            //                 .proc_id = numeric_limits<uint64_t>::max()
+            //             },
+            //             .ti = {
+            //                 .obj_id = tim.obj_id,
+            //                 .proc_id = tim.proc_id
+            //             },
+            //             .data = Timeout {
+            //                 .timer_id = tim.timer_id
+            //             }
+            //         };
+            //
+            //         per_thread_data[thread].q.push(data);
+            //     } else if (ptr->res != -ECANCELED) {
+            //         cout << "Unknown timer result: " << ptr->res << endl;
+            //     }
+            // },
+            // [&] (TimerUpdate& tim_upd) {
+            //     if (ptr->res >= 0 && tim_upd.remove)
+            //         timers.erase(tim_upd.timer_id);
+            // },
             [&] (CoEvent& event) {
                 per_thread_data[thread].q.push(CqeReady {
                     .id = event.id,
-                    .result = ptr->res,
-                    .ti = TargetInfo {
-                        .obj_id = event.obj_id,
-                        .proc_id = event.proc_id
-                    }
+                    .result = ptr->res
                 });
             }
         }, uringdata->data);
@@ -317,110 +208,6 @@ void ThreadData::process_uring() {
     io_uring_cq_advance(&ring, i);
 }
 
-void ThreadData::construct_call(ConstructorCall& construct) {
-    context = reinterpret_pointer_cast<IoUringData>(std::move(construct.uring_data));
-    obj_info.emplace(construct.ti.obj_id, ObjectDataThreaded {
-        .ptr = construct.constructor(),
-        .assoc_procs = {},
-        .parents = {{construct.ci.thread_id, construct.ci.obj_id}},
-        .children = {}
-    });
-
-    process_queued(obj_info[construct.ti.obj_id].ptr, construct.ti);
-}
-
-void ThreadData::function_call(FunctionCall& func) {
-    obj_info[func.ti.obj_id].assoc_procs.push_back(func.ti.proc_id);
-
-    proc_to_dat[func.ti.proc_id].assoc_obj = func.ti.obj_id;
-    proc_to_dat[func.ti.proc_id].back_notify = {func.ci.thread_id, func.ci.obj_id, func.ci.proc_id};
-    proc_to_dat[func.ti.proc_id].status = CallStatus::Running;
-
-    CallResponse resp = func.call(obj_info[func.ti.obj_id].ptr, func.ti.proc_id);
-
-    process_queued(obj_info[func.ti.obj_id].ptr, func.ti);
-
-    proc_to_dat[func.ti.proc_id].op_hint = resp.op_hint;
-    proc_to_dat[func.ti.proc_id].description = resp.description;
-    proc_to_dat[func.ti.proc_id].status = resp.success ? CallStatus::Running : CallStatus::Degraded;
-
-    if (resp.ret) {
-        auto [failed, code] = resp.ret.value();
-        proc_to_dat[func.ti.proc_id].status = failed ? CallStatus::Failed : CallStatus::Finished;
-        proc_to_dat[func.ti.proc_id].return_code = code;
-
-        if (static_cast<uint64_t>(func.ci.thread_id) >= per_thread_data.size()) return;
-
-        // We don't iterate through back_notify since at this point only the notifiable entity is the
-        // calling procedure at thread_id.
-        per_thread_data[func.ci.thread_id].q.push(
-            Data {
-                .ci = CallerInfo {
-                    .thread_id = thread,
-                    .obj_id = func.ti.obj_id,
-                    .proc_id = func.ti.proc_id
-                },
-                .ti = TargetInfo {
-                    .obj_id = func.ci.obj_id,
-                    .proc_id = func.ci.proc_id
-                },
-                .data = ChildTaskCompletion {
-                    .calling_id = func.ci.proc_id,
-                    .task_id = func.ti.proc_id,
-                    .status = proc_to_dat[func.ti.proc_id].status,
-                    .return_code = code
-                }
-            }
-        );
-    }
-}
-
-void ThreadData::data_received(Data& on_data) {
-    if (!obj_info.contains(on_data.ti.obj_id)
-        || !proc_to_dat.contains(on_data.ti.proc_id)) {
-        return;
-    }
-
-    obj_info[on_data.ti.obj_id].ptr->map_event_data(on_data.data);
-    auto res = obj_info[on_data.ti.obj_id].ptr->on_yield(on_data.data);
-    process_queued(obj_info[on_data.ti.obj_id].ptr, on_data.ti);
-    if (res) {
-        pair<bool, int> yielded = res.value();
-
-        proc_to_dat[on_data.ti.proc_id].status = yielded.first ? CallStatus::Failed : CallStatus::Finished;
-
-        Data completed_notification = {
-            .ci = CallerInfo {
-                .thread_id = thread,
-                .obj_id = on_data.ti.obj_id,
-                .proc_id = on_data.ti.proc_id
-            },
-            .ti = TargetInfo {
-                .obj_id = get<1>(proc_to_dat[on_data.ti.proc_id].back_notify),
-                .proc_id = get<2>(proc_to_dat[on_data.ti.proc_id].back_notify)
-            },
-            .data = ChildTaskCompletion {
-                .calling_id = get<2>(proc_to_dat[on_data.ti.proc_id].back_notify),
-                .task_id = on_data.ti.proc_id,
-                .status = proc_to_dat[on_data.ti.proc_id].status,
-                .return_code = yielded.second
-            }
-        };
-
-        per_thread_data[get<0>(proc_to_dat[on_data.ti.proc_id].back_notify)].q.push(completed_notification);
-    }
-
-    if (also_notify.contains(on_data.ti.proc_id)) {
-        for (auto [obj, proc] : also_notify[on_data.ti.proc_id]) {
-            Data copy = on_data;
-            copy.ti = TargetInfo {
-                .obj_id = obj,
-                .proc_id = proc
-            };
-            per_thread_data[thread].q.push(copy);
-        }
-    }
-}
 
 int ThreadData::find_target_thread(unordered_set<int> threads) {
         // Attempt to stay on the same thread, with a lower threshold
@@ -458,186 +245,4 @@ int ThreadData::find_target_thread(unordered_set<int> threads) {
     }
 
     return run_thread;
-}
-
-void ThreadData::process_queued(shared_ptr<Event> ptr, TargetInfo ti) {
-    process_queued_construct(ptr, ti);
-    process_queued_function(ptr, ti);
-    process_queued_uring(ptr, ti);
-    process_queued_timers(ptr, ti);
-    process_queued_delete(ptr, ti);
-    process_queued_attach(ptr, ti);
-    ptr->clear();
-}
-
-void ThreadData::process_queued_construct(shared_ptr<Event> ptr, TargetInfo ti) {
-    list<EventQueuedConstruct>& constructs = ptr->get_queued<EventQueuedConstruct>();
-    for (auto& construct : constructs) {
-        auto& opt_ev = ptr->get_evinfo(construct.idx, construct.vidx);
-        if (!opt_ev)
-            continue;
-
-        int run_thread = find_target_thread();
-        auto new_obj_id = get_obj_id();
-        EventInfo& evinfo = opt_ev.value();
-        evinfo.locator = EventInfo::Locator {
-            .object_id = new_obj_id,
-            .thread_id = {run_thread}
-        };
-
-        obj_info[ti.obj_id].children[new_obj_id] = {};
-
-        ConstructorCall callinfo {
-            .constructor = construct.fun,
-            .ci = CallerInfo {
-                .thread_id = run_thread,
-                .obj_id = ti.obj_id,
-                .proc_id = ti.proc_id
-            },
-            .ti = TargetInfo {
-                .obj_id = new_obj_id,
-                .proc_id = numeric_limits<uint64_t>::max()
-            },
-            .uring_data = std::move(construct.uring_data)
-        };
-
-        per_thread_data[thread].q.push(callinfo);
-    }
-}
-
-void ThreadData::process_queued_function(shared_ptr<Event> ptr, TargetInfo ti) {
-    auto& funcs = ptr->get_queued<EventQueuedFunction>();
-
-    for (auto& func : funcs) {
-        auto& evinfo_opt = ptr->get_evinfo(func.idx, func.vidx);
-
-        if (!evinfo_opt) continue;
-
-        EventInfo& evinfo = evinfo_opt.value();
-
-        if (!evinfo.locator) {
-            throw invalid_argument{"Object was not initialized"};
-        }
-
-        EventInfo::Locator& locator = evinfo.locator.value();
-
-        int target_thread = find_target_thread(locator.thread_id);
-
-        uint64_t proc_id = get_proc_id();
-        auto& info = obj_info[ti.obj_id].children[locator.object_id];
-        info.thread = thread;
-        info.procedures.emplace(proc_id);
-
-        FunctionCall callinfo = {
-            .call = func.fun,
-            .ci = CallerInfo {
-                .thread_id = thread,
-                .obj_id = ti.obj_id,
-                .proc_id = ti.proc_id
-            },
-            .ti = TargetInfo {
-                .obj_id = locator.object_id,
-                .proc_id = proc_id
-            }
-        };
-
-        ptr->global_to_local(proc_id, func.local_id);
-
-        per_thread_data[target_thread].q.push(callinfo);
-    }
-}
-
-void ThreadData::process_queued_uring(shared_ptr<Event> ptr, TargetInfo ti) {
-    auto& urings = ptr->get_queued<EventQueuedUring>();
-
-    for (auto& uring : urings) {
-        io_uring_sqe* sqe = io_uring_get_sqe(&ring);
-        if (sqe) {
-            uring.fun(sqe);
-            IoUringAttached* attached = new IoUringAttached;
-            attached->data.emplace<EventData>(EventData{uring.op, ti.obj_id, ti.proc_id});
-            io_uring_sqe_set_data(sqe, attached);
-        }
-    }
-}
-
-void ThreadData::process_queued_timers(shared_ptr<Event> ptr, TargetInfo ti) {
-    auto& timersl = ptr->get_queued<EventQueuedTimer>();
-
-    for (auto& timer : timersl) {
-        if (timers.contains(ptr->translate_tim_local(timer.local_id))) {
-            bool zeroed = timer.time.tv_nsec == 0 && timer.time.tv_sec == 0;
-            io_uring_sqe* sqe = io_uring_get_sqe(&ring);
-            IoUringAttached* attached = new IoUringAttached;
-            io_uring_sqe_set_data(sqe, attached);
-            if (zeroed) {
-                attached->data.emplace<TimerUpdate>(
-                    TimerUpdate {
-                        .timer_id = ptr->translate_tim_local(timer.local_id),
-                        .remove = true
-                    }
-                );
-                io_uring_prep_timeout_remove(sqe, (__u64)timers[ptr->translate_tim_local(timer.local_id)].ptr, 0);
-            } else {
-                *timers[ptr->translate_tim_local(timer.local_id)].ts = timer.time;
-                attached->data.emplace<TimerUpdate>(
-                    TimerUpdate {
-                        .timer_id = ptr->translate_tim_local(timer.local_id),
-                        .remove = false
-                    }
-                );
-                io_uring_prep_timeout_update(sqe, timers[ptr->translate_tim_local(timer.local_id)].ts.get(), (__u64)timers[ptr->translate_tim_local(timer.local_id)].ptr, 0);
-            }
-        } else {
-            uint64_t id = get_tim_id();
-            ptr->global_to_local_tim(id, timer.local_id);
-            io_uring_sqe* sqe = io_uring_get_sqe(&ring);
-            IoUringAttached* attached = new IoUringAttached;
-            timers[id] = {
-                .ptr = attached,
-                .obj_id = ti.obj_id,
-                .ts = make_unique<__kernel_timespec>(timer.time)
-            };
-            attached->data.emplace<Timer>(
-                Timer {
-                    .timer_id = id,
-                    .obj_id = ti.obj_id,
-                    .proc_id = ti.proc_id
-                }
-            );
-
-            io_uring_prep_timeout(sqe, timers[id].ts.get(), 0, 0);
-            io_uring_sqe_set_data(sqe, attached);
-        }
-    }
-}
-
-void ThreadData::process_queued_delete(shared_ptr<Event> ptr, TargetInfo ti) {
-    auto& deleted = ptr->get_queued<EventQueuedDelete>();
-    for (auto& deleted_s : deleted) {
-        for (int id : deleted_s.thread) {
-            per_thread_data[id].q.push(
-                Delete {
-                    .ci = CallerInfo {
-                        .thread_id = thread,
-                        .obj_id = ti.obj_id,
-                        .proc_id = ti.proc_id
-                    },
-                    .ti = TargetInfo {
-                        .obj_id = deleted_s.obj_id,
-                        .proc_id = numeric_limits<uint64_t>::max()
-                    }
-                }
-            );
-        }
-        obj_info[ti.obj_id].children.erase(deleted_s.obj_id);
-    }
-}
-
-void ThreadData::process_queued_attach(shared_ptr<Event> ptr, TargetInfo ti) {
-        auto& attaches = ptr->get_queued<EventQueuedAttach>();
-
-        for (auto& attach : attaches) {
-            also_notify[ptr->translate_proc_local(attach.target_local_id)].emplace_back(ti.obj_id, ti.proc_id);
-    }
 }

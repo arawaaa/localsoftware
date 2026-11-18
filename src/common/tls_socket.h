@@ -7,8 +7,10 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 
+#include "readwrite_bytes.h"
 #include "defs.h"
 #include "event.h"
+#include "coro_pinned.h"
 
 #define MAXFRAMELENGTH (size_t)(16 * 1024)
 #define MAXUFRAMELENGTH (size_t)(16384 - 1024) // little bit of margin
@@ -37,7 +39,14 @@ public:
     ~SSLCtx();
 };
 
-/* Class for managing TLS connections
+/*
+ * Class for managing TLS connections
+ *
+ * This class is not thread-safe! All functions have to be called
+ * from the same thread
+ *
+ * TODO make multiple-coroutine-reentrancy correct
+ * will need mt_coro_pinned.h to be used for both handshake & regular read/writes
  */
 
 class TLSSocket : public Event {
@@ -46,30 +55,24 @@ public:
 
     ~TLSSocket();
 
-    void openssl_setup();
+    TLSSocket(TLSSocket&& other) = default;
+    TLSSocket& operator=(TLSSocket&& other) = default;
 
-    CallResponse read(uint64_t id, char* buf, size_t len, bool read_all = true);
+    pinned<int> read(char* buf, size_t len, bool read_all = true);
 
-    CallResponse write(uint64_t id, char* buf, size_t len);
-
-    /**
-     * @brief Handle the completion queue entry (CQE) result.
-     */
-    optional<pair<bool, int>> on_yield(EventType event) override;
-
-    string get_info() const override;
+    pinned<int> write(char* buf, size_t len);
 
     pair<size_t&, char*> get_e_read();
 
 protected:
+    ReadWriteBytes socket_;
     uint64_t task_bytes_read_, task_bytes_write_;
     bool task_bytes_r_fin_ = true, task_bytes_w_fin_ = true;
     uint64_t task_read_, task_write_, task_write_2_ = numeric_limits<uint64_t>::max();
     bool server_;
 
-    bool sticky_read_ = false;
-    char* u_read_, *u_write_;
-    size_t u_readlen_ = 0, u_writelen_ = 0, u_read_p_ = 0, u_write_p_ = 0;
+    char* u_write_;
+    size_t u_writelen_ = 0, u_write_p_ = 0;
 
     // TLS variables. Buffer procession for recv: recv -> encryptread -> ssl_read -> buffer_ -> parse
     enum TLSState {
@@ -86,13 +89,11 @@ protected:
     size_t e_read_s_ = 0, e_write_s_ = 0;
     TLSState state_;
 
-    optional<pair<bool, int>> handle_handshake();
+    void openssl_setup();
 
-    optional<pair<bool, int>> handle_read();
+    pinned<bool> handle_handshake();
 
-    optional<pair<bool, int>> handle_write();
+    pinned<bool> socket_read();
 
-    void arm_read();
-
-    void arm_write();
+    pinned<bool> socket_write();
 };

@@ -13,3 +13,6 @@ proxy.config
 build
 wg0.conf
 wg0.nmconnection
+*.key
+*.crt
+local

@@ -8,6 +8,7 @@
 
 #include "landing_accept.h"
 #include "landing_server.h"
+#include "readwrite_http.h"
 #include "s40_client.h"
 
 using namespace std;
@@ -49,8 +50,8 @@ LandingAccept::LandingAccept(shared_ptr<File> server_file, bool use_tls, const s
 pinned<void> LandingAccept::start() {
     while (true) {
         client_addr_len_ = sizeof(sockaddr_in6);
-        int connection = co_await ca(&io_uring_prep_accept, files_[0]->get(), reinterpret_cast<struct sockaddr*>(&client_addr_),
-                                     &client_addr_len_, 0);
+        int connection = co_await c(io_uring_prep_accept, files_[0]->get(), reinterpret_cast<struct sockaddr*>(&client_addr_),
+                                    &client_addr_len_, 0);
 
         if (connection <= 0) {
             // TODO Fork-join container in localsoftware.cpp, with per-result handling decisions
@@ -66,22 +67,34 @@ pinned<void> LandingAccept::start() {
 
         auto client_file = vector<shared_ptr<File>>{make_shared<File>(connection)};
 
-        int idx = i<AioLandingHTTP>(std::move(client_file), use_tls_, &http_manager_);
-        uint64_t taskid = c(idx, &AioLandingHTTP::start);
-        indices[taskid] = idx;
-    }
-}
+        auto it = find(servers_.begin(), servers_.end(), nullopt);
 
-optional<pair<bool, int>> LandingAccept::on_yield(EventType event) {
-    if (holds_alternative<ChildTaskCompletion>(event)) {
-        std::cout << "Connection close" << std::endl;
-        auto res = get<ChildTaskCompletion>(event);
-        d<AioLandingHTTP>(indices[res.task_id]);
-        indices.erase(res.task_id);
-    }
-    return nullopt;
-}
+        size_t loc;
 
-string LandingAccept::get_info() const {
-    return "LandingAccept FD " + to_string(files_[0]->get());
+        if (it == servers_.end()) {
+            // How do you in-place construct a deeply nested vector element. Very ugly!?
+            servers_.emplace_back(in_place, piecewise_construct,
+                                  forward_as_tuple(std::move(client_file), use_tls_, &http_manager_),
+                                  forward_as_tuple(nullopt));
+            it = --servers_.end();
+        } else {
+            it->emplace(piecewise_construct,
+                        forward_as_tuple(std::move(client_file), use_tls_, &http_manager_),
+                        forward_as_tuple(nullopt));
+        }
+
+        auto& [server, _] = it->value();
+        auto task = server.start().then([it](int return_code) -> void {
+            cout << "Connection Closed" << endl;
+            if (it->value().second) {
+                it->value().second.value().detach();
+            }
+            *it = nullopt;
+
+        });
+
+        if (*it) {
+            it->value().second = std::move(task);
+        }
+    }
 }

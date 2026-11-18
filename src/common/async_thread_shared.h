@@ -22,7 +22,6 @@ struct EventInfo {
 // Lock shared when reading, lock unique when writing
 struct IoUringData {
     unordered_map<type_index, vector<optional<EventInfo>>> sub_events;
-    map<uint64_t, type_index> awaiting_resolve;
     uint64_t local_proc_id = 0;
     uint64_t local_timer_id = 0;
     // Will get rid of id translation when start using promises
@@ -35,10 +34,15 @@ struct IoUringData {
 
 // Event queue types
 
+struct EventQueuedAlsoLook {
+    type_index idx;
+    size_t vidx;
+};
+
 struct EventQueuedConstruct {
     type_index idx;
     size_t vidx;
-    ConstructFunc fun;
+    shared_ptr<Event> ptr;
     shared_ptr<IoUringData> uring_data = shared_ptr<IoUringData>();
 };
 
@@ -84,65 +88,20 @@ struct CallResponse {
     uint32_t op_hint;
 };
 
-struct CallerInfo {
-    int thread_id;
-    uint64_t obj_id;
-    uint64_t proc_id;
-};
-
-struct TargetInfo {
-    uint64_t obj_id;
-    uint64_t proc_id;
-};
-
-struct RootStart {
-    ConstructFunc constructor;
-    FunctionFunc init;
-    TargetInfo ti;
-};
-
-struct CoRoot {
+struct Root {
     ConstructFunc constructor;
     function<shared_ptr<task>(shared_ptr<Event>)> fn;
-    TargetInfo ti;
-};
-
-struct ConstructorCall {
-    ConstructFunc constructor;
-    CallerInfo ci;
-    TargetInfo ti;
-    // Type erased pointer for shared context container
-    shared_ptr<IoUringData> uring_data;
-};
-
-struct FunctionCall {
-
-    FunctionFunc call;
-    CallerInfo ci;
-    TargetInfo ti;
-};
-
-struct Delete {
-    CallerInfo ci;
-    TargetInfo ti;
-};
-
-struct Data {
-    CallerInfo ci;
-    TargetInfo ti;
-    EventType data;
 };
 
 struct CqeReady {
     uint64_t id;
     int result;
-    TargetInfo ti;
 };
 
 // ThreadData internal
 
 struct alignas(hardware_destructive_interference_size) PerThread {
-    typedef variant<ConstructorCall, FunctionCall, Delete, Data, RootStart, CoRoot, CqeReady> EventVariant;
+    typedef variant<Root, CqeReady> EventVariant;
     typedef oneapi::tbb::concurrent_bounded_queue<EventVariant> WorkQueue;
     WorkQueue q;
 

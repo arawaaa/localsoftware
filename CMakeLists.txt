@@ -13,7 +13,9 @@ if(ipo_supported)
     set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
 endif()
 
-add_compile_options(-Wno-interference-size)
+add_compile_options(-Wno-interference-size -fsanitize=address)
+
+add_link_options(-fsanitize=address)
 
 find_package(Boost REQUIRED system json)
 

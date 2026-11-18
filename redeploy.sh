@@ -2,13 +2,13 @@
 
 path=""
 if [ "$1" == "o" ]; then
-    cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release
-    cmake --build build/release --parallel $(nproc --all)
+    cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release -DLOCAL=false
     path="build/release/src/localsoftware"
+    cmake --build build/release --parallel $(nproc --all)
 else
-    cmake -S . -B build/debug -DCMAKE_BUILD_TYPE=Debug
-    cmake --build build/debug --parallel $(nproc --all)
+    cmake -S . -B build/debug -DCMAKE_BUILD_TYPE=Debug -DLOCAL=false
     path="build/debug/src/localsoftware"
+    cmake --build build/debug --parallel $(nproc --all)
 fi
 
 if [ $? -ne 0 ]; then

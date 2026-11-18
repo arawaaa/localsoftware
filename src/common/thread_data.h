@@ -44,7 +44,10 @@ class ThreadData {
     TimerMap timers;
     map<uint64_t, list<pair<uint64_t, uint64_t>>> also_notify;
     unordered_map<uint64_t, Waiters> readiness_waiters;
-    deque<tuple<function<void(io_uring_sqe*)>, uint64_t, TargetInfo>> sqes;
+    deque<tuple<function<void(io_uring_sqe*)>, uint64_t>> sqes;
+
+    // HACK Need better method for initiating root events
+    vector<pair<shared_ptr<task>, shared_ptr<Event>>> root_tasks;
 
     uint64_t proc_id_base, proc_id_curr; // Upper bound of block is id_base + 1000
     uint64_t obj_id_base, obj_id_curr;
@@ -75,13 +78,9 @@ public:
     /*
      * Add new uring awaitable, return id handle
      */
-    uint64_t co_register(function<void(io_uring_sqe*)> sfunc);
-
-    ThreadData* co_preferred();
+    uint64_t co_register(function<void(io_uring_sqe*)> sfunc, coroutine_handle<> handle);
 
     void co_deregister(uint64_t id);
-
-    void co_handle(uint64_t id, coroutine_handle<> handle);
 
     int co_result(uint64_t id);
 
@@ -96,25 +95,5 @@ private:
 
     void process_uring();
 
-    void construct_call(ConstructorCall& construct);
-
-    void function_call(FunctionCall& func);
-
-    void data_received(Data& on_data);
-
     int find_target_thread(unordered_set<int> threads = {});
-
-    void process_queued(shared_ptr<Event> ptr, TargetInfo ti);
-
-    void process_queued_construct(shared_ptr<Event> ptr, TargetInfo ti);
-
-    void process_queued_function(shared_ptr<Event> ptr, TargetInfo ti);
-
-    void process_queued_uring(shared_ptr<Event> ptr, TargetInfo ti);
-
-    void process_queued_timers(shared_ptr<Event> ptr, TargetInfo ti);
-
-    void process_queued_delete(shared_ptr<Event> ptr, TargetInfo ti);
-
-    void process_queued_attach(shared_ptr<Event> ptr, TargetInfo ti);
 };

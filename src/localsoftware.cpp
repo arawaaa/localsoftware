@@ -18,7 +18,7 @@
 #include <openssl/sha.h>
 
 #include "async_handler.h"
-#include "bandwidth_monitor/bandwidth_accept.h"
+// #include "bandwidth_monitor/bandwidth_accept.h"
 #include "aio_landing/landing_accept.h"
 // #include "reverse_proxy/reverse_proxy_accept.cpp"
 #include "visit_stats.h"
@@ -198,13 +198,19 @@ void server_func() {
     auto& instance = AsyncHandler::self(1);
 
     // Setup WebSocket Accept Event
-    auto ws_files = {ws_fd, ws6_fd};
-    instance.initialize_root_event<BandwidthMonitorAccept>(ws_files, true, "/srv/bwith");
+    // auto ws_files = {ws_fd, ws6_fd};
+    // instance.initialize_root_event<BandwidthMonitorAccept>(ws_files, true, "/srv/bwith");
+
+#ifndef ISLOCAL
+    const char* directory = "/srv/landing";
+#else
+    const char* directory = "local/landing";
+#endif
 
     // Setup HTTP Landing Accept Event
     instance.compute_root<LandingAccept>([](shared_ptr<Event> accept) -> shared_ptr<task> {
         return make_shared<pinned<void>>(std::move(static_pointer_cast<LandingAccept>(accept)->start()));
-    }, http_fd, false, "/srv/landing");
+    }, http_fd, false, directory);
 
     // Setup HTTPS Landing Accept Event
     instance.compute_root<LandingAccept>([](shared_ptr<Event> accept) -> shared_ptr<task> {
@@ -212,7 +218,7 @@ void server_func() {
         // When we add the (execution method sensitive) destructor, make sure to have some storage in
         // threaddata (for now) for the root nodes
         return make_shared<pinned<void>>(std::move(static_pointer_cast<LandingAccept>(accept)->start()));
-    }, https_fd, true, "/srv/landing");
+    }, https_fd, true, directory);
 
     // vector<shared_ptr<File>> rp_files = {rphttps_fd};
     // instance.initialize_root_event<ReverseProxyAccept>(rp_files, "/srv/rp");

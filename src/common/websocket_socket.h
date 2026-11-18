@@ -29,13 +29,6 @@ public:
 
     CallResponse read_frame(uint64_t, char** buf);
 
-    /**
-     * @brief Handle the completion queue entry (CQE) result.
-     */
-    optional<pair<bool, int>> on_yield(EventType event) override;
-
-    string get_info() const override;
-
 protected:
     char headers_[128];
     char** r_buf_;

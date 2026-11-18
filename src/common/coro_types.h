@@ -1,6 +1,7 @@
 #pragma once
 
 #include <coroutine>
+#include <optional>
 
 #include "async_thread_shared.h"
 
@@ -18,11 +19,10 @@ class ThreadData;
  */
 struct readiness_api_awaitable {
     uint64_t id;
-    // This thread stays alive until all awaitables associated to it
-    // are finished (destroyed). Can be shifted on start/suspend
     ThreadData* data;
+    function<void(io_uring_sqe*)> submit_func;
 
-    readiness_api_awaitable(function<void(io_uring_sqe*)> sfunc);
+    readiness_api_awaitable(function<void(io_uring_sqe*)>&& sfunc);
 
     readiness_api_awaitable(readiness_api_awaitable& other) = delete;
     readiness_api_awaitable& operator=(readiness_api_awaitable& other) = delete;

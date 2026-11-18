@@ -65,15 +65,24 @@ AsyncHandler::AsyncHandler(int ts) : per_thread_data(ts) {
     auto opts = SSL_OP_IGNORE_UNEXPECTED_EOF | SSL_OP_NO_RENEGOTIATION | SSL_OP_CIPHER_SERVER_PREFERENCE;
     SSL_CTX_set_options(tls_ctx_, opts);
 
-    if (SSL_CTX_use_certificate_chain_file(tls_ctx_, "/etc/letsencrypt/live/arnavrawat.xyz-0001/fullchain.pem") <= 0) {
+#ifndef ISLOCAL
+    const char* fullchain = "/etc/letsencrypt/live/arnavrawat.xyz-0001/fullchain.pem";
+    const char* privkey = "/etc/letsencrypt/live/arnavrawat.xyz-0001/privkey.pem";
+#else
+    const char* fullchain = "arnavrawat.xyz.crt";
+    const char* privkey = "arnavrawat.xyz.key";
+#endif
+
+    if (SSL_CTX_use_certificate_chain_file(tls_ctx_, fullchain) <= 0) {
         SSL_CTX_free(tls_ctx_);
         throw runtime_error{"Unable to load certificate chain"};
     }
 
-    if (SSL_CTX_use_PrivateKey_file(tls_ctx_, "/etc/letsencrypt/live/arnavrawat.xyz-0001/privkey.pem", SSL_FILETYPE_PEM) <= 0) {
+    if (SSL_CTX_use_PrivateKey_file(tls_ctx_, privkey, SSL_FILETYPE_PEM) <= 0) {
         SSL_CTX_free(tls_ctx_);
         throw runtime_error{"Unable to load private key. Check for certificate / key mismatch."};
     }
+
 
     // No session resumption for now
 
