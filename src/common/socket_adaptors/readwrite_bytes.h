@@ -5,7 +5,7 @@
 
 #include "event.h"
 #include "defs.h"
-#include "coro_pinned.h"
+#include "coroutine/pinned.h"
 
 using namespace std;
 

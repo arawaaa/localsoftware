@@ -1,20 +1,16 @@
 #pragma once
 
 #include <cstdint>
-#include <string>
 #include <memory>
 #include <vector>
-#include <typeindex>
 #include <liburing.h>
-#include <optional>
 
 #include "file.h"
 #include "defs.h"
 #include "async_thread_shared.h"
-#include "coro_types.h"
+#include "coroutine/readiness.h"
 
 using namespace std;
-extern thread_local shared_ptr<IoUringData> context;
 extern thread_local uint64_t uring_id;
 
 /**

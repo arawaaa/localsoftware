@@ -106,16 +106,12 @@ pinned<int> TLSSocket::read(char* buf, size_t len, bool read_all) {
 
 pinned<int> TLSSocket::write(char* buf, size_t len) {
     size_t write_position = 0;
-    u_write_ = buf;
-    u_writelen_ = len;
-    u_write_p_ = 0;
-
     if (state_ == TLSState::WaitHello && !(co_await handle_handshake()))
         co_return -1;
 
     while (write_position < len) {
         size_t numread = 0;
-        int ret = SSL_write_ex(ssl_(), u_write_ + write_position, min(len - write_position, MAXUFRAMELENGTH), &numread);
+        int ret = SSL_write_ex(ssl_(), buf + write_position, min(len - write_position, MAXUFRAMELENGTH), &numread);
         write_position += numread;
 
         switch (SSL_get_error(ssl_(), ret)) {

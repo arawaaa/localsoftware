@@ -16,7 +16,6 @@
 using namespace std;
 class ThreadData;
 
-extern thread_local shared_ptr<IoUringData> context;
 extern thread_local AllocatorWrapper alloc;
 extern thread_local uint64_t uring_id;
 extern thread_local ThreadData* tdata;

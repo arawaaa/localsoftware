@@ -4,7 +4,7 @@
 #include <liburing.h>
 
 #include "defs.h"
-#include "coro_types.h"
+#include "coroutine/readiness.h"
 
 template <typename... Args, typename... FnArgs>
 readiness_api_awaitable Event::c(void(*liburing)(io_uring_sqe*, Args...), FnArgs... args) {

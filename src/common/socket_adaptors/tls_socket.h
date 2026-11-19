@@ -10,7 +10,7 @@
 #include "readwrite_bytes.h"
 #include "defs.h"
 #include "event.h"
-#include "coro_pinned.h"
+#include "coroutine/pinned.h"
 
 #define MAXFRAMELENGTH (size_t)(16 * 1024)
 #define MAXUFRAMELENGTH (size_t)(16384 - 1024) // little bit of margin
@@ -66,13 +66,7 @@ public:
 
 protected:
     ReadWriteBytes socket_;
-    uint64_t task_bytes_read_, task_bytes_write_;
-    bool task_bytes_r_fin_ = true, task_bytes_w_fin_ = true;
-    uint64_t task_read_, task_write_, task_write_2_ = numeric_limits<uint64_t>::max();
     bool server_;
-
-    char* u_write_;
-    size_t u_writelen_ = 0, u_write_p_ = 0;
 
     // TLS variables. Buffer procession for recv: recv -> encryptread -> ssl_read -> buffer_ -> parse
     enum TLSState {
@@ -86,7 +80,7 @@ protected:
     // The write function will take care of the entire buffer
     size_t e_writelen_;
     char* e_read_, *e_write_;
-    size_t e_read_s_ = 0, e_write_s_ = 0;
+    size_t e_read_s_ = 0;
     TLSState state_;
 
     void openssl_setup();

@@ -1,4 +1,4 @@
-#include "coro_pinned.h"
+#include "pinned.h"
 
 pinned<void> pinned<void>::then(function<void()> on_completion) {
     auto task = [](function<void()> completion_cb, pinned<void> task) mutable -> pinned<void> {

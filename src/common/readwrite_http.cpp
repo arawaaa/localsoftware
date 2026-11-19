@@ -10,9 +10,7 @@
 #include <boost/optional/optional_io.hpp>
 #include <variant>
 
-#include "readwrite_bytes.h"
 #include "event.h"
-#include "tls_socket.h"
 #include "defs.h"
 
 using namespace std;
@@ -73,10 +71,6 @@ pinned<int> ReadWriteHTTP::write_http(http::response<http::string_body> res) {
     } else {
         co_return co_await get<ReadWriteBytes>(socket_).write(write_buffer.data().data(), write_buffer.size());
     }
-}
-
-CallResponse ReadWriteHTTP::write_http_with_file_body(uint64_t, http::response_header<> header, std::string file, int dirfd) {
-
 }
 
 bool ReadWriteHTTP::try_parse(boost::beast::flat_buffer& buffer) {

@@ -5,88 +5,10 @@
 #include <functional>
 #include <coroutine>
 
-#include "coro_task.h"
+#include "coroutine/task.h"
 #include "defs.h"
 
-struct EventInfo {
-    struct Locator {
-        uint64_t object_id;
-        unordered_set<int> thread_id;
-    };
-    // Filled in by ThreadData
-    optional<Locator> locator;
-    weak_ptr<Event> event;
-};
-
-// In single-thread case, low overhead due to futex
-// Lock shared when reading, lock unique when writing
-struct IoUringData {
-    unordered_map<type_index, vector<optional<EventInfo>>> sub_events;
-    uint64_t local_proc_id = 0;
-    uint64_t local_timer_id = 0;
-    // Will get rid of id translation when start using promises
-    map<uint64_t, uint64_t> global_proc_to_local_proc;
-    map<uint64_t, uint64_t> local_proc_to_global_proc;
-    map<uint64_t, uint64_t> global_tim_to_local_tim;
-    map<uint64_t, uint64_t> local_tim_to_global_tim;
-    shared_mutex mut;
-};
-
-// Event queue types
-
-struct EventQueuedAlsoLook {
-    type_index idx;
-    size_t vidx;
-};
-
-struct EventQueuedConstruct {
-    type_index idx;
-    size_t vidx;
-    shared_ptr<Event> ptr;
-    shared_ptr<IoUringData> uring_data = shared_ptr<IoUringData>();
-};
-
-struct EventQueuedFunction {
-    type_index idx;
-    size_t vidx;
-    uint64_t local_id;
-    FunctionFunc fun;
-};
-
-struct EventQueuedUring {
-    int op;
-    function<void(io_uring_sqe*)> fun;
-};
-
-struct EventQueuedUringCo {
-    uint64_t id;
-    int op;
-    function<void(io_uring_sqe*)> fun;
-};
-
-struct EventQueuedTimer {
-    uint64_t local_id;
-    __kernel_timespec time;
-};
-
-struct EventQueuedDelete {
-    unordered_set<int> thread;
-    uint64_t obj_id;
-};
-
-struct EventQueuedAttach {
-    uint64_t target_local_id;
-};
-
-
 // Workqueue types
-
-struct CallResponse {
-    string description;
-    bool success;
-    optional<pair<bool, int>> ret;
-    uint32_t op_hint;
-};
 
 struct Root {
     ConstructFunc constructor;

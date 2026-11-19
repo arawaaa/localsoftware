@@ -4,14 +4,14 @@ target_sources(common
         file.cpp
         http_manager.cpp
         readwrite_http.cpp
-        readwrite_bytes.cpp
-        tls_socket.cpp
-        # websocket_socket.cpp
+        socket_adaptors/readwrite_bytes.cpp
+        socket_adaptors/tls_socket.cpp
+        # socket_adaptors/websocket_socket.cpp
         event.cpp
         async_handler.cpp
         thread_data.cpp
-        coro_types.cpp
-        coro_pinned.cpp
+        coroutine/readiness.cpp
+        coroutine/pinned.cpp
 )
 
 if(LOCAL)

@@ -10,9 +10,9 @@
 
 #include "event.h"
 #include "defs.h"
-#include "coro_pinned.h"
-#include "tls_socket.h"
-#include "readwrite_bytes.h"
+#include "coroutine/pinned.h"
+#include "socket_adaptors/tls_socket.h"
+#include "socket_adaptors/readwrite_bytes.h"
 
 using namespace std;
 namespace http = boost::beast::http;
@@ -34,8 +34,6 @@ public:
      * @brief Serializes an HTTP response into the write buffer and starts the write process.
      */
     pinned<int> write_http(http::response<http::string_body> res);
-
-    CallResponse write_http_with_file_body(uint64_t, http::response_header<> header, std::string file, int dirfd);
 
 protected:
     variant<ReadWriteBytes, TLSSocket> socket_;

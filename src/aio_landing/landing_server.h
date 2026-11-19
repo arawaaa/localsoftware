@@ -7,8 +7,7 @@
 #include "defs.h"
 #include "http_manager.h"
 #include "readwrite_http.h"
-#include "coro_pinned.h"
-#include "coro_wait.h"
+#include "coroutine/pinned.h"
 
 using namespace std;
 
